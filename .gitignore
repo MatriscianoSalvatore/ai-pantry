@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+
+# Android / IDE
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# macOS
+.DS_Store
+
+# Keystore (mai committare chiavi)
+*.jks
+*.keystore
+
+# Modelli AI (troppo grandi per il repo — vedi README per il setup)
+*.tflite
+*.task

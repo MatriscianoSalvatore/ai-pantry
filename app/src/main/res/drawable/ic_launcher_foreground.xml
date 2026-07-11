@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Carota stilizzata -->
+    <group android:translateX="27" android:translateY="27">
+        <path
+            android:fillColor="#FF8F3C"
+            android:pathData="M22,20 C30,18 40,26 38,34 L20,52 C12,54 4,46 6,38 Z" />
+        <path
+            android:fillColor="#66BB6A"
+            android:pathData="M30,14 C32,8 38,6 42,8 C40,12 36,16 32,18 Z" />
+        <path
+            android:fillColor="#43A047"
+            android:pathData="M36,18 C42,14 48,16 50,20 C46,22 40,22 36,22 Z" />
+    </group>
+</vector>

@@ -1,0 +1,18 @@
+package com.smatrisciano.aipantry.capture.domain
+
+import android.graphics.Bitmap
+
+enum class ScanTarget { FRIDGE, PANTRY }
+
+data class DetectedIngredient(
+    val name: String,
+    val quantity: String,
+    val confidence: Float
+)
+
+interface IngredientDetector {
+    /** Nome del motore mostrato in UI (es. "MediaPipe EfficientNet" / "Demo mode"). */
+    val engineName: String
+
+    suspend fun detect(bitmap: Bitmap, target: ScanTarget): List<DetectedIngredient>
+}

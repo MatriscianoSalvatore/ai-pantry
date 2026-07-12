@@ -15,6 +15,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.smatrisciano.aipantry.aisetup.presentation.AiSetupActions
+import com.smatrisciano.aipantry.aisetup.presentation.AiSetupScreenRoot
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions
 import com.smatrisciano.aipantry.capture.presentation.CaptureScreenRoot
 import com.smatrisciano.aipantry.core.navigation.Destination
@@ -57,6 +59,18 @@ private fun AiPantryNavHost() {
                             navController.navigate(Destination.CaptureRoutes.graphRoot.route)
                         InventoryActions.Navigation.GoToRecipes ->
                             navController.navigate(Destination.RecipeRoutes.graphRoot.route)
+                        InventoryActions.Navigation.GoToAiSetup ->
+                            navController.navigate(Destination.AiSetupRoutes.graphRoot.route)
+                    }
+                }
+            )
+        }
+
+        composable(Destination.AiSetupRoutes.graphRoot.route) {
+            AiSetupScreenRoot(
+                onNavigation = { navigation ->
+                    when (navigation) {
+                        AiSetupActions.Navigation.GoBack -> navController.popBackStack()
                     }
                 }
             )

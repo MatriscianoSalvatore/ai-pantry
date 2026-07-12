@@ -17,6 +17,8 @@ captures/
 *.jks
 *.keystore
 
-# Modelli AI (troppo grandi per il repo — vedi README per il setup)
+# Modelli AI (troppo grandi per il repo — l'app li scarica in-app)
 *.tflite
 *.task
+# ...tranne il classificatore bundlato nell'APK (~24 MB)
+!app/src/main/assets/models/ingredients.tflite

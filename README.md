@@ -2,7 +2,7 @@
 
 Demo Android (Droidcon) di una pipeline AI **completamente on-device**: fotografi frigo e dispensa, la computer vision riconosce gli ingredienti, un LLM locale genera ricette che usano solo ciò che hai.
 
-**Nessuna connessione richiesta. Le foto non lasciano mai il dispositivo.**
+**L'inferenza è 100% offline: le foto non lasciano mai il dispositivo.** La rete serve solo per il download one-time del modello, gestito in-app — nessun `adb push`, nessun setup manuale.
 
 ## Flusso demo
 
@@ -13,40 +13,45 @@ Demo Android (Droidcon) di una pipeline AI **completamente on-device**: fotograf
 ## Architettura
 
 ```
-CameraX → Image Analysis → Image Classifier (MediaPipe/LiteRT)
-        → Detected ingredients → Room Database
-        → Gemma 3n (LiteRT) → Recipe generation → Jetpack Compose UI
+CameraX → Image capture
+        → Ingredient detection ── Gemma 3n vision (LiteRT)      [modello attivo scaricato]
+        │                      └─ EfficientNet-Lite2 (bundlato) [fallback zero-setup]
+        → Room Database
+        → Recipe generation ──── Gemma 3n / Qwen (LiteRT)
+        → Jetpack Compose UI
 ```
 
 Ogni feature segue Clean Architecture + MVI (`data / domain / presentation`), DI con Koin:
 
-- `capture/` — CameraX, `IngredientDetector` (MediaPipe → fallback demo)
+- `capture/` — CameraX, `SmartIngredientDetector` (LLM vision → classificatore bundlato → demo)
 - `inventory/` — Room, inventario ingredienti
-- `recipes/` — `RecipeGenerator` (Gemma 3n via MediaPipe GenAI → fallback demo)
+- `recipes/` — `SmartRecipeGenerator` (LLM attivo → demo)
+- `aisetup/` — schermata di provisioning modelli (download, resume, selezione)
+- `core/data/ai/` — `LlmCatalog`, `ModelRepository` (downloader con resume), `LlmEngineHolder` (cache motore LiteRT)
 
-## Modalità demo vs modelli reali
+## Provisioning dei modelli (in-app, senza setup manuale)
 
-L'app funziona **out-of-the-box in demo mode**: senza modelli sul device, detector e LLM restituiscono i risultati dello script demo (con latenze simulate). Se i modelli sono presenti, vengono usati automaticamente (`SmartIngredientDetector` / `SmartRecipeGenerator`), con fallback silenzioso alla demo in caso di errore — a prova di palco.
+Dalla home → icona 🤖 → **On-device AI**. Catalogo:
 
-### Abilitare Gemma 3n reale
+| Modello | Dimensione | Vision | Autenticazione |
+|---------|-----------|--------|----------------|
+| **Gemma 3n E4B** (default) | 4.4 GB | ✅ detection ingredienti dalla foto | token HF + accettazione licenza Gemma |
+| Gemma 3n E2B | 3.1 GB | ✅ | token HF + accettazione licenza Gemma |
+| Qwen2.5 1.5B | 1.6 GB | ❌ (usa il classificatore bundlato) | nessuna |
 
-1. Scarica un modello Gemma 3n in formato `.task` per LiteRT (es. `gemma-3n-E2B-it-int4.task` da [Kaggle](https://www.kaggle.com/models/google/gemma-3n) o dalla collection [litert-community su Hugging Face](https://huggingface.co/litert-community)).
-2. Push sul device:
-   ```bash
-   adb shell mkdir -p /data/local/tmp/llm
-   adb push gemma-3n-E2B-it-int4.task /data/local/tmp/llm/gemma-3n.task
-   ```
-   (in alternativa: `files/models/gemma-3n.task` nella sandbox dell'app)
+- Il download è **in-app con resume** (si può mettere in pausa e riprendere).
+- Per i Gemma: accetta la licenza su [huggingface.co](https://huggingface.co/google/gemma-3n-E4B-it-litert-preview), crea un token di lettura e incollalo nella schermata AI.
+- La **detection ingredienti funziona out-of-the-box** anche senza download: EfficientNet-Lite2 (~24 MB) è bundlato nell'APK e riconosce frutta/verdura/cibi (classi ImageNet, mapping in `IngredientLabels`).
+- Il demo mode (risultati dello script Droidcon, latenze simulate) resta come ultima rete di sicurezza: la demo non può fallire sul palco. La UI mostra sempre il motore attivo.
+- Convenienza dev: un modello in `/data/local/tmp/llm/<filename>` ha priorità su quello scaricato.
 
-### Abilitare il classificatore ingredienti reale
+## Pubblicazione su Play Store
 
-1. Procurati un classificatore immagini `.tflite` (es. EfficientNet-Lite food/ImageNet dal [MediaPipe Model Zoo](https://ai.google.dev/edge/mediapipe/solutions/vision/image_classifier)).
-2. Copialo in `files/models/ingredients.tflite` nella sandbox dell'app:
-   ```bash
-   adb shell mkdir -p /data/data/com.smatrisciano.aipantry/files/models
-   adb push classifier.tflite /data/data/com.smatrisciano.aipantry/files/models/ingredients.tflite
-   ```
-3. La mappatura label → ingrediente è in `IngredientLabels` (`capture/data/MediaPipeIngredientDetector.kt`).
+Per distribuire con AI funzionante senza chiedere token agli utenti:
+
+1. **Hosting proprio del modello** (consigliato): carica il `.task` su un tuo CDN (GCS/S3/R2) e cambia la `url` in `LlmCatalog`. La [Gemma Terms of Use](https://ai.google.dev/gemma/terms) consente la ridistribuzione con passthrough delle condizioni d'uso e notice; Qwen è Apache 2.0 senza vincoli.
+2. **Google Play — Play for On-device AI** (beta): delivery dei modelli custom via AI pack di Play Asset Delivery, con download differenziale gestito dallo store.
+3. Il classificatore bundlato garantisce comunque la feature di riconoscimento al primo avvio, prima ancora del download LLM.
 
 ## Build
 
@@ -55,7 +60,7 @@ L'app funziona **out-of-the-box in demo mode**: senza modelli sul device, detect
 ./gradlew installDebug
 ```
 
-Richiede JDK 17+, Android SDK 36. `minSdk 31`, device con camera (per Gemma reale: 6+ GB RAM consigliati, accelerazione GPU/NPU dove disponibile).
+Richiede JDK 17+, Android SDK 36. `minSdk 31`, device con camera. Per i modelli Gemma: 6+ GB di RAM consigliati, accelerazione GPU/NPU dove disponibile.
 
 ## Stack
 

@@ -1,6 +1,7 @@
 package com.smatrisciano.aipantry
 
 import android.app.Application
+import com.smatrisciano.aipantry.aisetup.di.aiSetupModule
 import com.smatrisciano.aipantry.capture.data.di.captureModule
 import com.smatrisciano.aipantry.core.di.coreModule
 import com.smatrisciano.aipantry.inventory.data.di.inventoryModule
@@ -20,7 +21,8 @@ class AiPantryApp : Application() {
                 coreModule,
                 inventoryModule,
                 captureModule,
-                recipesModule
+                recipesModule,
+                aiSetupModule
             )
         }
     }

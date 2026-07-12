@@ -14,9 +14,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -85,6 +88,9 @@ private fun InventoryScreen(
                             Icon(Icons.Default.DeleteSweep, contentDescription = "Clear all")
                         }
                     }
+                    IconButton(onClick = { onAction(Navigation.GoToAiSetup) }) {
+                        Icon(Icons.Default.SmartToy, contentDescription = "AI settings")
+                    }
                 }
             )
         },
@@ -96,19 +102,23 @@ private fun InventoryScreen(
             )
         }
     ) { padding ->
-        if (state.isEmpty) {
-            EmptyPantry(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                onScanClick = { onAction(Navigation.GoToCapture) }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            AiStatusBanner(
+                state = state,
+                onClick = { onAction(Navigation.GoToAiSetup) }
             )
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
+            if (state.isEmpty) {
+                EmptyPantry(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    onScanClick = { onAction(Navigation.GoToCapture) }
+                )
+            } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(16.dp),
@@ -145,6 +155,42 @@ private fun InventoryScreen(
                     Text("What can I cook? (${state.totalCount} ingredients)")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AiStatusBanner(
+    state: InventoryState,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = if (state.isAiReady) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (state.isAiReady) Icons.Default.CheckCircle else Icons.Default.SmartToy,
+                contentDescription = null
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = state.aiStatusLabel,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(Icons.Default.ChevronRight, contentDescription = null)
         }
     }
 }

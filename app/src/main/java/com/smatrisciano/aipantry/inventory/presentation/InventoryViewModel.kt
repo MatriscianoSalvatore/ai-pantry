@@ -2,30 +2,46 @@ package com.smatrisciano.aipantry.inventory.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.smatrisciano.aipantry.core.data.ai.AiSettings
+import com.smatrisciano.aipantry.core.data.ai.LlmCatalog
+import com.smatrisciano.aipantry.core.data.ai.ModelRepository
+import com.smatrisciano.aipantry.core.data.ai.ModelStatus
 import com.smatrisciano.aipantry.inventory.domain.models.IngredientSource
 import com.smatrisciano.aipantry.inventory.domain.repository.InventoryRepository
 import com.smatrisciano.aipantry.inventory.presentation.InventoryActions.Interaction
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class InventoryViewModel(
-    private val inventoryRepository: InventoryRepository
+    private val inventoryRepository: InventoryRepository,
+    settings: AiSettings,
+    modelRepository: ModelRepository
 ) : ViewModel() {
 
-    val uiState = inventoryRepository.observeInventory()
-        .map { ingredients ->
-            InventoryState(
-                fridgeItems = ingredients.filter { it.source == IngredientSource.FRIDGE },
-                pantryItems = ingredients.filter { it.source != IngredientSource.FRIDGE }
-            )
-        }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = InventoryState()
+    val uiState = combine(
+        inventoryRepository.observeInventory(),
+        settings.activeModelId,
+        modelRepository.statuses
+    ) { ingredients, activeId, statuses ->
+        val activeModel = LlmCatalog.byId(activeId)
+        val status = statuses[activeModel.id]
+        InventoryState(
+            fridgeItems = ingredients.filter { it.source == IngredientSource.FRIDGE },
+            pantryItems = ingredients.filter { it.source != IngredientSource.FRIDGE },
+            isAiReady = status == ModelStatus.Ready,
+            aiStatusLabel = when (status) {
+                ModelStatus.Ready -> "${activeModel.displayName} ready · on-device"
+                is ModelStatus.Downloading -> "Downloading ${activeModel.displayName}…"
+                else -> "Demo AI active — tap to set up ${activeModel.displayName}"
+            }
         )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = InventoryState()
+    )
 
     fun onAction(action: Interaction) {
         when (action) {

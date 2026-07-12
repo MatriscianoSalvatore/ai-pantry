@@ -10,5 +10,6 @@ sealed interface InventoryActions {
     sealed interface Navigation : InventoryActions {
         data object GoToCapture : Navigation
         data object GoToRecipes : Navigation
+        data object GoToAiSetup : Navigation
     }
 }

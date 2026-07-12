@@ -236,7 +236,7 @@ private fun RecipeCard(
             if (recipe.missingIngredients.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "🛒 Missing: ${recipe.missingIngredients.joinToString()}",
+                    text = "🛒 Missing: ${recipe.missingIngredients.joinToString { it.display }}",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.secondary

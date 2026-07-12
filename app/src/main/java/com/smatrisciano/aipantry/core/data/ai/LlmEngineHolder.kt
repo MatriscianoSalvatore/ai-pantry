@@ -4,39 +4,39 @@ import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 /**
  * Cache del motore LiteRT: il caricamento del modello costa secondi e GB di RAM,
  * quindi l'istanza viene riusata finché il modello attivo non cambia.
  *
- * Backend: **GPU-first, sempre**. Su alcuni driver la GPU degrada dopo un po'
- * (token spazzatura) ma un engine fresco torna a funzionare: alla prima
- * corruzione si ricrea su GPU, alla seconda si ripiega su CPU **solo per questo
- * processo** — al prossimo avvio dell'app si riparte da GPU (auto-guarigione).
+ * Backend: GPU-first, ma su alcuni device l'accelerator GPU di LiteRT non si
+ * carica affatto e `generateResponse` si pianta (chiamata nativa non
+ * interrompibile). Quando succede, il backend viene marcato rotto in modo
+ * **persistente** per quel modello: dai lanci successivi si va dritti su CPU,
+ * senza più sprecare tempo ad appendersi sulla GPU morta.
  */
 class LlmEngineHolder(private val context: Context) {
+
+    private val prefs = context.getSharedPreferences("llm_engine", Context.MODE_PRIVATE)
 
     private var engine: LlmInference? = null
     private var enginePath: String? = null
     private var engineBackend: LlmInference.Backend? = null
 
-    /** Corruzioni GPU osservate in questo processo, per modello. */
-    private val gpuFailures = mutableMapOf<String, Int>()
-
-    init {
-        // Migrazione: via il vecchio flag persistente "GPU rotta per sempre"
-        context.getSharedPreferences("llm_engine", Context.MODE_PRIVATE)
-            .edit { clear() }
-    }
-
     @Synchronized
     fun acquire(model: LlmModel, file: File): LlmInference {
         val path = file.absolutePath
-        val wantedBackend = if ((gpuFailures[model.id] ?: 0) < MAX_GPU_FAILURES) {
-            LlmInference.Backend.GPU
-        } else {
+        val wantedBackend = if (isGpuBroken(model)) {
             LlmInference.Backend.CPU
+        } else {
+            LlmInference.Backend.GPU
         }
         if (enginePath != path || engineBackend != wantedBackend) {
             engine?.close()
@@ -52,31 +52,70 @@ class LlmEngineHolder(private val context: Context) {
         return requireNotNull(engine)
     }
 
+    fun currentBackendIsGpu(): Boolean = engineBackend == LlmInference.Backend.GPU
+
     /**
-     * Il backend attivo ha prodotto output corrotto. L'engine viene buttato:
-     * il prossimo [acquire] ne crea uno fresco (GPU finché le corruzioni sono
-     * sotto soglia, poi CPU per il resto del processo). Ritorna false solo se
-     * anche la CPU corrompe — a quel punto non c'è rimedio da ritentare.
+     * All'avvio: carica l'engine e, se è finito su GPU, verifica con una micro
+     * inferenza che la GPU funzioni davvero (su alcuni device l'accelerator non
+     * si carica e `generateResponse` si pianta). Se la sonda va in timeout, marca
+     * la GPU rotta e ricarica su CPU — così la prima generazione dell'utente non
+     * paga l'attesa. Job scollegato: il thread nativo eventualmente piantato non
+     * blocca il warm-up.
+     */
+    suspend fun warmUp(model: LlmModel, file: File) {
+        acquire(model, file)
+        if (!currentBackendIsGpu()) return
+
+        val engine = requireNotNull(engine)
+        val probe = probeScope.async {
+            // Prompt rappresentativo (genera qualche frase con i parametri reali):
+            // una micro-generazione banale passerebbe anche su GPU rotta
+            LlmInferenceSession.createFromOptions(
+                engine,
+                LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                    .setTemperature(0.4f).setTopK(40).build()
+            ).use { session ->
+                session.addQueryChunk("List five common fruits, one per line.")
+                session.generateResponse()
+            }
+        }
+        val ok = withTimeoutOrNull(GPU_PROBE_TIMEOUT_MS) { probe.await() } != null
+        if (!ok) {
+            probe.cancel()
+            Log.w(TAG, "GPU probe timed out — marking GPU unusable and reloading on CPU")
+            reportGpuUnusable(model)
+            acquire(model, file)
+        } else {
+            Log.i(TAG, "GPU probe OK — using GPU")
+        }
+    }
+
+    private val probeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * La GPU ha prodotto output corrotto o si è piantata: marca il backend rotto
+     * (persistente) e ricarica su CPU. Ritorna false se anche la CPU fallisce —
+     * a quel punto non c'è rimedio.
      */
     @Synchronized
-    fun reportCorruptedOutput(model: LlmModel): Boolean {
+    fun reportGpuUnusable(model: LlmModel): Boolean {
         if (engineBackend == LlmInference.Backend.CPU) {
-            Log.e(TAG, "Corrupted output on CPU backend too — giving up")
+            Log.e(TAG, "Output unusable on CPU backend too — giving up")
             return false
         }
-        val failures = (gpuFailures[model.id] ?: 0) + 1
-        gpuFailures[model.id] = failures
-        Log.w(
-            TAG,
-            "GPU failure #$failures for ${model.id}: " +
-                if (failures < MAX_GPU_FAILURES) "retrying with a fresh GPU engine" else "falling back to CPU for this session"
-        )
+        Log.w(TAG, "GPU unusable for ${model.id}: switching to CPU (persisted)")
+        prefs.edit { putBoolean(gpuBrokenKey(model), true) }
         engine?.close()
         engine = null
         enginePath = null
         engineBackend = null
         return true
     }
+
+    private fun isGpuBroken(model: LlmModel): Boolean =
+        prefs.getBoolean(gpuBrokenKey(model), false)
+
+    private fun gpuBrokenKey(model: LlmModel) = "gpu_broken_${model.id}"
 
     private fun createEngine(
         path: String,
@@ -97,11 +136,12 @@ class LlmEngineHolder(private val context: Context) {
     private companion object {
         const val TAG = "LlmEngineHolder"
 
-        // Alla seconda corruzione GPU nello stesso processo si passa a CPU
-        const val MAX_GPU_FAILURES = 2
-
         // Copre prompt + risposta di lista ricette e istruzioni (poche centinaia
         // di token ciascuna) e combacia con la KV cache del modello (ekv2048)
         const val MAX_TOKENS = 2048
+
+        // La sonda GPU all'avvio: se la micro inferenza non risponde in tempo,
+        // la GPU è inutilizzabile su questo device
+        const val GPU_PROBE_TIMEOUT_MS = 30_000L
     }
 }

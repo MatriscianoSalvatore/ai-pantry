@@ -7,8 +7,12 @@ import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Generazione ricette on-device con il modello attivo (Gemma 3n) via LiteRT.
@@ -44,12 +48,12 @@ class LlmRecipeGenerator(
         val available = ingredients.map { it.name.lowercase() }
         val normalized = recipes.map { recipe ->
             val (owned, toBuy) = recipe.usedIngredients.partition { used ->
-                val u = normalizeIngredientName(used)
+                val u = normalizeIngredientName(used.name)
                 PANTRY_STAPLES.any { it in u } || available.any { it in u || u in it }
             }
             val missing = (recipe.missingIngredients + toBuy)
-                .filterNot { m -> PANTRY_STAPLES.any { it in normalizeIngredientName(m) } }
-                .distinctBy { normalizeIngredientName(it) }
+                .filterNot { m -> PANTRY_STAPLES.any { it in normalizeIngredientName(m.name) } }
+                .distinctBy { normalizeIngredientName(it.name) }
             recipe.copy(usedIngredients = owned, missingIngredients = missing)
         }
 
@@ -71,25 +75,53 @@ class LlmRecipeGenerator(
     }
 
     /**
-     * Inferenza con controllo anti-corruzione: su alcuni driver GPU il modello
-     * quantizzato emette token spazzatura (<pad>, <unused…>) — in quel caso il
-     * motore viene ricreato su CPU e la chiamata fallisce per far scattare il retry.
+     * Inferenza con due protezioni:
+     *  - watchdog: su un driver GPU degradato `generateResponse` può bloccarsi
+     *    per sempre (chiamata nativa non interrompibile). La eseguiamo in un job
+     *    separato e facciamo timeout sull'await: allo scadere si forza la CPU e
+     *    si ritenta, invece di lasciare la UI a caricare all'infinito;
+     *  - anti-corruzione: se il modello emette token spazzatura (<pad>,
+     *    <unused…>) si ricrea su CPU e si ritenta.
      */
-    private fun generateChecked(
+    private suspend fun generateChecked(
         model: com.smatrisciano.aipantry.core.data.ai.LlmModel,
         prompt: String
     ): String {
         val engine = engineHolder.acquire(model, modelRepository.modelFile(model))
-        val rawOutput = LlmInferenceSession.createFromOptions(engine, sessionOptions()).use { session ->
-            session.addQueryChunk(prompt)
-            session.generateResponse()
+
+        // Il watchdog serve SOLO a smascherare l'hang della GPU: la CPU non si
+        // pianta mai, è solo lenta, quindi va lasciata completare senza limite
+        // (altrimenti una generazione CPU lunga verrebbe uccisa e ritentata).
+        val rawOutput = if (engineHolder.currentBackendIsGpu()) {
+            // Job scollegato: se la GPU si pianta, il thread nativo resta bloccato
+            // (non killabile) ma la coroutine chiamante prosegue e recupera su CPU
+            val generation = watchdogScope.async {
+                LlmInferenceSession.createFromOptions(engine, sessionOptions()).use { session ->
+                    session.addQueryChunk(prompt)
+                    session.generateResponse()
+                }
+            }
+            withTimeoutOrNull(GENERATION_TIMEOUT_MS) { generation.await() }.also {
+                if (it == null) {
+                    generation.cancel()
+                    Log.w(TAG, "GPU generation timed out after ${GENERATION_TIMEOUT_MS}ms, switching to CPU")
+                    engineHolder.reportGpuUnusable(model)
+                    error("Generation timed out, retrying")
+                }
+            }!!
+        } else {
+            LlmInferenceSession.createFromOptions(engine, sessionOptions()).use { session ->
+                session.addQueryChunk(prompt)
+                session.generateResponse()
+            }
         }
+
         if (garbageMarkers.any { it in rawOutput }) {
             Log.w(TAG, "corrupted output detected: ${rawOutput.take(120)}")
-            check(engineHolder.reportCorruptedOutput(model)) {
+            check(engineHolder.reportGpuUnusable(model)) {
                 "The AI model is producing corrupted output on this device"
             }
-            error("Corrupted LLM output, engine switched to CPU")
+            error("Corrupted LLM output, retrying")
         }
         return rawOutput
     }
@@ -98,7 +130,7 @@ class LlmRecipeGenerator(
      * Con un modello 1B l'output ogni tanto non rispetta il formato:
      * si ritenta in silenzio prima di far arrivare l'errore alla UI.
      */
-    private inline fun <T> withRetry(attempts: Int = 3, block: (attempt: Int) -> T): T {
+    private inline fun <T> withRetry(attempts: Int = 4, block: (attempt: Int) -> T): T {
         var lastError: Throwable? = null
         repeat(attempts) { attempt ->
             try {
@@ -128,15 +160,18 @@ class LlmRecipeGenerator(
             Available ingredients:
             $inventoryList
 
-            Respond with ONLY a JSON array (no markdown, no extra text) of exactly 5 recipes.
+            Use METRIC amounts: grams (g) for solids and millilitres (ml) for liquids.
+            Do NOT use tablespoons, teaspoons, cups, or "pinch".
+
+            Respond with ONLY a JSON array (no markdown, no extra text) of exactly 4 recipes.
             Each recipe object has EXACTLY these fields and nothing else:
             {
               "title": string,
               "whySuitable": string (one short sentence),
               "prepTimeMinutes": int,
               "difficulty": "EASY" | "MEDIUM" | "HARD",
-              "usedIngredients": [string] (plain ingredient names, NO quantities),
-              "missingIngredients": [string] (ALWAYS present: ingredients the cook still needs to buy, [] if none)
+              "usedIngredients": [string] (each item formatted as Ingredient - amount in g or ml, for example Pasta - 200 g, Milk - 250 ml),
+              "missingIngredients": [string] (ALWAYS present, same Ingredient - amount format in g or ml: ingredients still to buy, [] if none)
             }
             Do NOT include cooking steps.
         """.trimIndent()
@@ -166,8 +201,16 @@ class LlmRecipeGenerator(
             )
             .trim()
 
+    // Scope scollegato per il watchdog: i job che vi girano possono restare
+    // bloccati su una chiamata GPU nativa senza trascinarsi la coroutine chiamante
+    private val watchdogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private companion object {
         const val TAG = "LlmRecipeGenerator"
+
+        // Oltre questo tempo la generazione è considerata bloccata (GPU degradata):
+        // si forza la CPU e si ritenta
+        const val GENERATION_TIMEOUT_MS = 75_000L
 
         val garbageMarkers = listOf("<unused", "<pad>", "<unk>")
 

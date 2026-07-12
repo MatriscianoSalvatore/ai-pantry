@@ -128,9 +128,9 @@ private fun RecipeDetailScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(vertical = 4.dp)
                 ) {
-                    Text(text = ingredientEmoji(ingredient))
+                    Text(text = ingredientEmoji(ingredient.name))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = ingredient, style = MaterialTheme.typography.bodyLarge)
+                    Text(text = ingredient.display, style = MaterialTheme.typography.bodyLarge)
                 }
             }
 
@@ -138,7 +138,7 @@ private fun RecipeDetailScreen(
                 SectionTitle("You'll also need")
                 recipe.missingIngredients.forEach { ingredient ->
                     Text(
-                        text = "• $ingredient",
+                        text = "• ${ingredient.display}",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier.padding(vertical = 4.dp)

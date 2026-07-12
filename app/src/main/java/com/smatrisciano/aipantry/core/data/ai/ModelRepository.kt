@@ -255,7 +255,7 @@ class ModelRepository(
     private fun warmUpEngine(model: LlmModel) {
         if (!warmedUp.add(model.id)) return
         appScope.launch(Dispatchers.Default) {
-            runCatching { engineHolder.acquire(model, modelFile(model)) }
+            runCatching { engineHolder.warmUp(model, modelFile(model)) }
                 .onFailure {
                     Log.w(TAG, "Engine warm-up failed", it)
                     warmedUp.remove(model.id)

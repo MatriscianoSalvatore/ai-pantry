@@ -26,6 +26,7 @@ import com.smatrisciano.aipantry.recipes.presentation.RecipeDetailScreenRoot
 import com.smatrisciano.aipantry.recipes.presentation.RecipesActions
 import com.smatrisciano.aipantry.recipes.presentation.RecipesScreenRoot
 import com.smatrisciano.aipantry.recipes.presentation.RecipesViewModel
+import org.koin.androidx.compose.KoinAndroidContext
 import org.koin.androidx.compose.koinViewModel
 
 class MainActivity : ComponentActivity() {
@@ -34,8 +35,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            AiPantryTheme {
-                AiPantryNavHost()
+            KoinAndroidContext {
+                AiPantryTheme {
+                    AiPantryNavHost()
+                }
             }
         }
     }

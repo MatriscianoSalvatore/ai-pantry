@@ -17,9 +17,12 @@ captures/
 *.jks
 *.keystore
 
-# Modelli AI (troppo grandi per il repo — arrivano via Play come AI pack)
-*.tflite
+# Modelli AI LLM (troppo grandi per GitHub, >100MB — arrivano via Play come AI
+# pack o via lo script prepare_*_model.sh)
 *.task
-gemma3n_e2b_part*/src/main/assets/model.part*
-# ...tranne il classificatore bundlato nell'APK (~24 MB)
+llm_pack_*/src/main/assets/model.part*
+app/src/beta/assets/llm/
+# Classificatori bundlati nell'APK (~24MB ciascuno, sotto il limite): versionati
+*.tflite
 !app/src/main/assets/models/ingredients.tflite
+!app/src/main/assets/models/detector.tflite

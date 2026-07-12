@@ -36,11 +36,32 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    // Come viene consegnato il modello LLM (Gemma 3n E2B in entrambi i casi):
+    //  - play: AI pack via Play for On-device AI (chunk ≤1.5GB ricomposti)
+    //  - beta: modello embeddato nell'APK (~3.4GB) da distribuire a mano ai
+    //          tester (AGP vieta nomi flavor che iniziano con "test")
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            isDefault = true
+            buildConfigField("String", "MODEL_SOURCE", "\"AI_PACKS\"")
+        }
+        create("beta") {
+            dimension = "distribution"
+            buildConfigField("String", "MODEL_SOURCE", "\"BUNDLED\"")
+        }
     }
     // I modelli .tflite/.task non vanno compressi nell'APK: MediaPipe li mappa in memoria
     androidResources {
         noCompress += listOf("tflite", "task")
     }
+
+    // Play for On-device AI: il modello LLM viaggia come AI pack via Play
+    assetPacks += listOf(":gemma3n_e2b_part0", ":gemma3n_e2b_part1", ":gemma3n_e2b_part2")
 }
 
 dependencies {
@@ -77,6 +98,9 @@ dependencies {
 
     implementation(libs.mediapipe.tasks.vision)
     implementation(libs.mediapipe.tasks.genai)
+
+    implementation(libs.play.ai.delivery)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)
 }

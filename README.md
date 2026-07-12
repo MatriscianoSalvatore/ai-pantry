@@ -1,8 +1,8 @@
 # AI Pantry – Cook from Your Fridge 🥕📷
 
-Demo Android (Droidcon) di una pipeline AI **completamente on-device**: fotografi frigo e dispensa, la computer vision riconosce gli ingredienti, un LLM locale genera ricette che usano solo ciò che hai.
+Demo Android (Droidcon) di una pipeline AI **completamente on-device**: fotografi frigo e dispensa, la computer vision riconosce gli ingredienti, un LLM locale (**Gemma 3n E2B**) genera ricette che usano solo ciò che hai.
 
-**L'inferenza è 100% offline: le foto non lasciano mai il dispositivo.** La rete serve solo per il download one-time del modello, gestito in-app — nessun `adb push`, nessun setup manuale.
+**L'inferenza è 100% on-device e l'app non ha nemmeno il permesso INTERNET.** Le foto non lasciano mai il dispositivo. Il modello arriva già col canale di installazione: Google Play (AI pack) o embeddato nell'APK per i tester.
 
 ## Flusso demo
 
@@ -14,54 +14,70 @@ Demo Android (Droidcon) di una pipeline AI **completamente on-device**: fotograf
 
 ```
 CameraX → Image capture
-        → Ingredient detection ── Gemma 3n vision (LiteRT)      [modello attivo scaricato]
-        │                      └─ EfficientNet-Lite2 (bundlato) [fallback zero-setup]
+        → Ingredient detection ── Gemma 3n E2B vision (LiteRT)  [richiede GPU/OpenCL]
+        │                      └─ EfficientNet-Lite2 (bundlato) [fallback, sempre]
         → Room Database
-        → Recipe generation ──── Gemma 3n / Qwen (LiteRT)
+        → Recipe generation ──── Gemma 3n E2B (LiteRT)
         → Jetpack Compose UI
+
+flavor play:  Google Play ──(AI pack ×3, fast-follow)──▶ ModelRepository ──assemble──▶ .task
+flavor beta:  assets APK ──(chunk ×3 nell'APK ~3.4GB)──▶ ModelRepository ──assemble──▶ .task
 ```
 
 Ogni feature segue Clean Architecture + MVI (`data / domain / presentation`), DI con Koin:
 
-- `capture/` — CameraX, `SmartIngredientDetector` (LLM vision → classificatore bundlato → demo)
+- `capture/` — CameraX, `SmartIngredientDetector` (Gemma vision → classificatore bundlato → demo)
 - `inventory/` — Room, inventario ingredienti
-- `recipes/` — `SmartRecipeGenerator` (LLM attivo → demo)
-- `aisetup/` — schermata di provisioning modelli (download, resume, selezione)
-- `core/data/ai/` — `LlmCatalog`, `ModelRepository` (downloader con resume), `LlmEngineHolder` (cache motore LiteRT)
+- `recipes/` — `SmartRecipeGenerator` (Gemma → demo)
+- `aisetup/` — stato/gestione del modello (progresso, conferma rete mobile, delete)
+- `core/data/ai/` — `LlmCatalog`, `ModelSource` (AiPacks | BundledAssets), `ModelRepository`, `LlmEngineHolder`
 
-## Provisioning dei modelli (in-app, senza setup manuale)
+## Un solo modello, due canali di consegna
 
-Dalla home → icona 🤖 → **On-device AI**. Catalogo:
+**Gemma 3n E2B int4** (3.1 GB, multimodale) per tutti i flavor — mai download HTTP in-app:
 
-| Modello | Dimensione | Vision | Autenticazione |
-|---------|-----------|--------|----------------|
-| **Gemma 3n E4B** (default) | 4.4 GB | ✅ detection ingredienti dalla foto | token HF + accettazione licenza Gemma |
-| Gemma 3n E2B | 3.1 GB | ✅ | token HF + accettazione licenza Gemma |
-| Qwen2.5 1.5B | 1.6 GB | ❌ (usa il classificatore bundlato) | nessuna |
+| Flavor | Canale | Note |
+|--------|--------|------|
+| `play` | **Play for On-device AI**: 3 AI pack `fast-follow` ≤1.5GB, ricomposti al primo avvio, pack rimossi dopo l'assemblaggio | AAB ~3.3GB (limite Play: 1.5GB/pack, 4GB totali — E4B non ci starebbe) |
+| `beta` | **Embeddato nell'APK** in 3 chunk negli assets (AGP non impacchetta asset >2GB), ricomposti al primo avvio | APK ~3.4GB da mandare a mano ai tester; zero azioni richieste |
 
-- Il download è **in-app con resume** (si può mettere in pausa e riprendere).
-- Per i Gemma: accetta la licenza su [huggingface.co](https://huggingface.co/google/gemma-3n-E4B-it-litert-preview), crea un token di lettura e incollalo nella schermata AI.
-- La **detection ingredienti funziona out-of-the-box** anche senza download: EfficientNet-Lite2 (~24 MB) è bundlato nell'APK e riconosce frutta/verdura/cibi (classi ImageNet, mapping in `IngredientLabels`).
-- Il demo mode (risultati dello script Droidcon, latenze simulate) resta come ultima rete di sicurezza: la demo non può fallire sul palco. La UI mostra sempre il motore attivo.
-- Convenienza dev: un modello in `/data/local/tmp/llm/<filename>` ha priorità su quello scaricato.
-
-## Pubblicazione su Play Store
-
-Per distribuire con AI funzionante senza chiedere token agli utenti:
-
-1. **Hosting proprio del modello** (consigliato): carica il `.task` su un tuo CDN (GCS/S3/R2) e cambia la `url` in `LlmCatalog`. La [Gemma Terms of Use](https://ai.google.dev/gemma/terms) consente la ridistribuzione con passthrough delle condizioni d'uso e notice; Qwen è Apache 2.0 senza vincoli.
-2. **Google Play — Play for On-device AI** (beta): delivery dei modelli custom via AI pack di Play Asset Delivery, con download differenziale gestito dallo store.
-3. Il classificatore bundlato garantisce comunque la feature di riconoscimento al primo avvio, prima ancora del download LLM.
-
-## Build
+In entrambi i casi il primo avvio mostra "Preparing…" per ~20-60s e poi l'app è **pronta e offline per sempre**. Il modello va preparato una tantum da chi builda:
 
 ```bash
-./gradlew assembleDebug
-./gradlew installDebug
+# Il .task ufficiale richiede account HF con licenza Gemma accettata:
+#   https://huggingface.co/google/gemma-3n-E2B-it-litert-preview
+./scripts/prepare_model_packs.sh path/to/gemma-3n-E2B-it-int4.task   # → AI pack (flavor play)
+./scripts/prepare_beta_model.sh  path/to/gemma-3n-E2B-it-int4.task   # → assets APK (flavor beta)
 ```
 
-Richiede JDK 17+, Android SDK 36. `minSdk 31`, device con camera. Per i modelli Gemma: 6+ GB di RAM consigliati, accelerazione GPU/NPU dove disponibile.
+I chunk sono gitignorati. La ridistribuzione (Play o APK ai tester) è coperta dalla [Gemma Terms of Use](https://ai.google.dev/gemma/terms) con passthrough delle condizioni.
+
+### Build & distribuzione
+
+```bash
+# Tester (APK da mandare a mano):
+./gradlew assembleBetaDebug     # → app/build/outputs/apk/beta/debug/app-beta-debug.apk (~3.4GB)
+
+# Play Store:
+./gradlew bundlePlayRelease     # → AAB con AI pack
+
+# Test locale della delivery Play senza store:
+./gradlew bundlePlayDebug
+bundletool build-apks --bundle=app/build/outputs/bundle/playDebug/app-play-debug.aab \
+  --output=aipantry.apks --local-testing --overwrite
+bundletool install-apks --apks=aipantry.apks
+```
+
+⚠️ Le build APK del flavor `play` (`assemblePlayDebug`, Run di Android Studio) **non contengono gli AI pack**: per sviluppare c'è il sideload `adb push gemma-3n-E2B-it-int4.task /data/local/tmp/llm/` (ha priorità sul modello provisionato). Il flavor `beta` invece funziona anche da Android Studio.
+
+### Detection senza attese
+
+La detection ingredienti funziona **out-of-the-box**: EfficientNet-Lite2 (~24 MB) è bundlato nell'APK base (classi ImageNet, mapping in `IngredientLabels`). Quando Gemma è pronto, la detection passa alla **vision multimodale** — che richiede **GPU/OpenCL** (device reale; sull'emulatore il vision encoder non si inizializza e la cascata ripiega sul classificatore). Il demo mode (script Droidcon) resta come ultima rete di sicurezza e la UI mostra sempre il motore che ha realmente prodotto il risultato.
+
+## Requisiti
+
+JDK 17+, Android SDK 36, AGP 8.10+. `minSdk 31`, device con camera; per Gemma E2B: 6+ GB di RAM consigliati, GPU per la vision. Storage: ~6.5GB per la build beta (APK + modello provisionato), ~3.5GB per quella Play (i pack vengono rimossi dopo l'assemblaggio).
 
 ## Stack
 
-Kotlin 2.2 · Jetpack Compose (M3) · CameraX · MediaPipe Tasks (Vision + GenAI/LiteRT) · Room · Koin · Navigation Compose · kotlinx-serialization
+Kotlin 2.2 · Jetpack Compose (M3) · CameraX · MediaPipe Tasks (Vision + GenAI/LiteRT) · Play AI Delivery · Room · Koin · Navigation Compose · kotlinx-serialization

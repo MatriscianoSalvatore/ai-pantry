@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Nessun permesso INTERNET: il modello arriva via Google Play (AI pack),
+         l'inferenza è 100% on-device -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Solo per il download one-time dei modelli: l'inferenza è 100% offline -->
-    <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-feature
         android:name="android.hardware.camera"

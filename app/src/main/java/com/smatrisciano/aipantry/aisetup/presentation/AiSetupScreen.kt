@@ -1,5 +1,7 @@
 package com.smatrisciano.aipantry.aisetup.presentation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,12 +29,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.aisetup.presentation.AiSetupActions.Interaction
 import com.smatrisciano.aipantry.aisetup.presentation.AiSetupActions.Navigation
+import com.smatrisciano.aipantry.core.data.ai.ModelSource
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
 import org.koin.androidx.compose.koinViewModel
 import java.util.Locale
@@ -51,6 +53,16 @@ fun AiSetupScreenRoot(
     onNavigation: (Navigation) -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Launcher per il dialog di conferma Play (download su rete mobile)
+    val confirmationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { /* Play riprende da solo il download dopo la conferma */ }
+    DisposableEffect(confirmationLauncher) {
+        viewModel.confirmationLauncher = confirmationLauncher
+        onDispose { viewModel.confirmationLauncher = null }
+    }
+
     AiSetupScreen(
         state = state,
         onAction = { action ->
@@ -90,25 +102,10 @@ private fun AiSetupScreen(
             item {
                 Text(
                     text = "Recipes and ingredient recognition run entirely on your phone. " +
-                        "Pick a model and download it once (Wi-Fi recommended) — " +
-                        "after that the app works fully offline.",
+                        "The model is delivered with the app installation — once ready, " +
+                        "everything works fully offline.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            item {
-                OutlinedTextField(
-                    value = state.hfToken,
-                    onValueChange = { onAction(Interaction.OnTokenChanged(it)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Hugging Face token") },
-                    supportingText = {
-                        Text(
-                            "Needed for Gemma models only: accept the license on " +
-                                "huggingface.co, then paste a read token here."
-                        )
-                    },
-                    singleLine = true
                 )
             }
             items(state.models, key = { it.model.id }) { modelState ->
@@ -131,10 +128,6 @@ private fun ModelCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(
-                    selected = modelState.isActive,
-                    onClick = { onAction(Interaction.OnModelSelected(model.id)) }
-                )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = model.displayName,
@@ -142,8 +135,11 @@ private fun ModelCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "${model.sizeBytes.toGb()} · ${model.license}" +
-                            if (model.requiresHfToken) " · HF token" else " · no login",
+                        text = "${model.approxSizeBytes.toGb()} · ${model.license} · " +
+                            when (model.source) {
+                                is ModelSource.AiPacks -> "via Google Play"
+                                is ModelSource.BundledAssets -> "included in the app"
+                            },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -197,41 +193,70 @@ private fun ModelStatusRow(
 
         is ModelStatus.Downloading -> {
             Column {
-                val progress = status.totalBytes?.let {
-                    status.downloadedBytes.toFloat() / it
-                }
-                if (progress != null) {
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
+                LinearProgressIndicator(
+                    progress = { (status.downloadedBytes.toFloat() / status.totalBytes).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "${status.downloadedBytes.toGb()} of ${status.totalBytes.toGb()}",
+                        text = "${status.downloadedBytes.toGb()} of ${status.totalBytes.toGb()} · Google Play",
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedButton(onClick = { onAction(Interaction.OnCancelClick(model.id)) }) {
-                        Text("Pause")
+                        Text("Cancel")
                     }
                 }
             }
         }
 
-        is ModelStatus.NotDownloaded -> {
+        is ModelStatus.Assembling -> {
+            Column {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Preparing model…",
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
+
+        is ModelStatus.WaitingForWifi -> {
+            Column {
+                Text(
+                    text = "Waiting for Wi-Fi. You can allow the download on mobile data.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = { onAction(Interaction.OnConfirmDownloadClick) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Download now")
+                }
+            }
+        }
+
+        is ModelStatus.RequiresConfirmation -> {
+            Button(
+                onClick = { onAction(Interaction.OnConfirmDownloadClick) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Approve download")
+            }
+        }
+
+        is ModelStatus.NotInstalled -> {
             Button(
                 onClick = { onAction(Interaction.OnDownloadClick(model.id)) },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    if (status.resumableBytes > 0) {
-                        "Resume download (${status.resumableBytes.toGb()} done)"
-                    } else {
-                        "Download"
+                    when (model.source) {
+                        is ModelSource.AiPacks -> "Download via Google Play"
+                        is ModelSource.BundledAssets -> "Prepare model"
                     }
                 )
             }
@@ -249,12 +274,12 @@ private fun ModelStatusRow(
                     onClick = { onAction(Interaction.OnDownloadClick(model.id)) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (status.resumableBytes > 0) "Resume" else "Retry")
+                    Text("Retry")
                 }
             }
         }
     }
 }
 
-private fun Long?.toGb(): String =
-    this?.let { String.format(Locale.US, "%.1f GB", it / 1_073_741_824.0) } ?: "…"
+private fun Long.toGb(): String =
+    String.format(Locale.US, "%.1f GB", this / 1_073_741_824.0)

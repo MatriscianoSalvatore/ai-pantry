@@ -13,6 +13,8 @@ serialization = "1.8.0"
 camerax = "1.4.2"
 mediapipeVision = "0.10.21"
 mediapipeGenai = "0.10.24"
+playAiDelivery = "0.1.1-alpha01"
+coroutinesPlayServices = "1.10.2"
 coreSplashScreen = "1.2.0"
 junit = "4.13.2"
 
@@ -43,10 +45,13 @@ androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycl
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeVision" }
 mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeGenai" }
+play-ai-delivery = { group = "com.google.android.play", name = "ai-delivery", version.ref = "playAiDelivery" }
+kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutinesPlayServices" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-ai-pack = { id = "com.android.ai-pack", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

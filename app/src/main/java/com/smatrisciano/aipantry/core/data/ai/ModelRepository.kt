@@ -2,227 +2,263 @@ package com.smatrisciano.aipantry.core.data.ai
 
 import android.content.Context
 import android.util.Log
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import com.google.android.play.core.aipacks.AiPackManager
+import com.google.android.play.core.aipacks.AiPackState
+import com.google.android.play.core.aipacks.AiPackStateUpdateListener
+import com.google.android.play.core.aipacks.model.AiPackStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.tasks.await
 import java.io.File
-import java.io.RandomAccessFile
-import java.net.HttpURLConnection
-import java.net.URL
 
 sealed interface ModelStatus {
-    data class NotDownloaded(val resumableBytes: Long = 0L) : ModelStatus
-    data class Downloading(val downloadedBytes: Long, val totalBytes: Long?) : ModelStatus
-    data class Failed(val message: String, val resumableBytes: Long = 0L) : ModelStatus
+    data object NotInstalled : ModelStatus
+    data class Downloading(val downloadedBytes: Long, val totalBytes: Long) : ModelStatus
+    data object WaitingForWifi : ModelStatus
+    data object RequiresConfirmation : ModelStatus
+    data object Assembling : ModelStatus
     data object Ready : ModelStatus
+    data class Failed(val message: String) : ModelStatus
 }
 
 /**
- * Provisioning dei modelli LLM: download in-app con resume, nessun setup manuale
- * richiesto all'utente. I modelli finiscono nella sandbox dell'app
- * (external files dir, esente da permessi storage).
+ * Provisioning del modello LLM senza download HTTP in-app (l'app non ha
+ * nemmeno il permesso INTERNET). Due strade, decise dal flavor:
+ *  - [ModelSource.AiPacks]: Play for On-device AI — chunk ≤1.5GB consegnati
+ *    da Google Play (fast-follow) e ricomposti in un singolo .task;
+ *  - [ModelSource.BundledAsset]: modello embeddato negli assets dell'APK
+ *    (Firebase App Distribution) e copiato in files al primo avvio.
  */
 class ModelRepository(
     private val context: Context,
-    private val settings: AiSettings,
+    private val aiPackManager: AiPackManager,
     private val appScope: CoroutineScope
 ) {
 
     private val _statuses = MutableStateFlow<Map<String, ModelStatus>>(emptyMap())
     val statuses = _statuses.asStateFlow()
 
-    private val jobs = mutableMapOf<String, Job>()
+    private val packStates = mutableMapOf<String, AiPackState>()
+    private val provisionMutex = Mutex()
+
+    private val listener = AiPackStateUpdateListener { state -> onPackStateUpdate(state) }
 
     init {
-        refreshStatuses()
+        aiPackManager.registerListener(listener)
+        appScope.launch(Dispatchers.IO) { refresh() }
     }
 
     fun modelFile(model: LlmModel): File {
-        // Convenienza dev: modello sideloadato via adb ha priorità
+        // Convenienza dev: modello sideloadato via adb ha priorità (le build via
+        // APK del flavor play non contengono gli AI pack)
         val sideloaded = File("/data/local/tmp/llm/${model.fileName}")
         if (sideloaded.exists()) return sideloaded
         return File(modelsDir(), model.fileName)
     }
 
-    fun activeModel(): LlmModel = LlmCatalog.byId(settings.activeModelId.value)
+    fun activeModel(): LlmModel = LlmCatalog.default
 
     /** Il modello attivo, solo se pronto all'uso. */
     fun readyActiveModel(): LlmModel? =
         activeModel().takeIf { _statuses.value[it.id] == ModelStatus.Ready }
 
-    fun setActiveModel(model: LlmModel) = settings.setActiveModel(model.id)
-
+    /** Avvia (o ritenta) il provisioning del modello. */
     fun startDownload(model: LlmModel) {
-        if (jobs[model.id]?.isActive == true) return
-        if (model.requiresHfToken && settings.hfToken.value.isBlank()) {
-            setStatus(
-                model,
-                ModelStatus.Failed(
-                    "A Hugging Face token is required: accept the Gemma license on huggingface.co, then paste a read token above.",
-                    resumableBytes = partFile(model).length()
-                )
-            )
-            return
+        when (val source = model.source) {
+            is ModelSource.AiPacks -> {
+                setStatus(model, ModelStatus.Downloading(0, model.approxSizeBytes))
+                appScope.launch(Dispatchers.IO) {
+                    runCatching { aiPackManager.fetch(source.packNames).await() }
+                        .onFailure { error ->
+                            Log.w(TAG, "AI pack fetch failed", error)
+                            setStatus(
+                                model,
+                                ModelStatus.Failed(
+                                    "Google Play couldn't start the download: " +
+                                        "${error.message ?: error.javaClass.simpleName}. " +
+                                        "Make sure the app is installed from Play (or bundletool)."
+                                )
+                            )
+                        }
+                }
+            }
+            is ModelSource.BundledAssets ->
+                appScope.launch(Dispatchers.IO) { provisionBundled(model, source) }
         }
-        jobs[model.id] = appScope.launch(Dispatchers.IO) { download(model) }
     }
 
     fun cancelDownload(model: LlmModel) {
-        jobs.remove(model.id)?.cancel()
-        setStatus(model, ModelStatus.NotDownloaded(resumableBytes = partFile(model).length()))
+        (model.source as? ModelSource.AiPacks)?.let { aiPackManager.cancel(it.packNames) }
+        setStatus(model, ModelStatus.NotInstalled)
     }
 
     fun deleteModel(model: LlmModel) {
-        jobs.remove(model.id)?.cancel()
         File(modelsDir(), model.fileName).delete()
-        partFile(model).delete()
-        refreshStatuses()
+        (model.source as? ModelSource.AiPacks)?.packNames?.forEach { aiPackManager.removePack(it) }
+        setStatus(model, ModelStatus.NotInstalled)
     }
 
-    private fun refreshStatuses() {
-        _statuses.value = LlmCatalog.all.associate { model ->
-            model.id to when {
-                isDownloadedAndComplete(model) -> ModelStatus.Ready
-                else -> ModelStatus.NotDownloaded(resumableBytes = partFile(model).length())
+    /** Dialog di Play per confermare download su rete mobile / senza Wi-Fi. */
+    fun showConfirmationDialog(launcher: ActivityResultLauncher<IntentSenderRequest>) {
+        aiPackManager.showConfirmationDialog(launcher)
+    }
+
+    private suspend fun refresh() {
+        LlmCatalog.all.forEach { model ->
+            if (isProvisioned(model)) {
+                setStatus(model, ModelStatus.Ready)
+                return@forEach
+            }
+            when (val source = model.source) {
+                // Zero-touch: il modello embeddato si prepara da solo al primo avvio
+                is ModelSource.BundledAssets -> provisionBundled(model, source)
+                is ModelSource.AiPacks -> refreshAiPacks(model, source)
             }
         }
     }
 
-    private fun isDownloadedAndComplete(model: LlmModel): Boolean {
-        val file = modelFile(model)
-        if (!file.exists()) return false
-        val expected = model.sizeBytes ?: return true
-        return file.length() == expected
+    // region AI pack (flavor play)
+
+    private suspend fun refreshAiPacks(model: LlmModel, source: ModelSource.AiPacks) {
+        if (allPacksAvailable(model, source)) {
+            assemble(model, source)
+            return
+        }
+        runCatching { aiPackManager.getPackStates(source.packNames).await() }
+            .onSuccess { states ->
+                states.packStates().values.forEach { packStates[it.name()] = it }
+                recomputeAiPackStatus(model, source)
+            }
+            .onFailure {
+                Log.w(TAG, "getPackStates failed", it)
+                setStatus(model, ModelStatus.NotInstalled)
+            }
     }
 
-    private suspend fun download(model: LlmModel) {
-        val part = partFile(model)
-        try {
-            part.parentFile?.mkdirs()
-            var offset = part.length()
-            var connection = openFollowingRedirects(model, offset)
+    private fun onPackStateUpdate(state: AiPackState) {
+        packStates[state.name()] = state
+        val model = LlmCatalog.all.firstOrNull {
+            (it.source as? ModelSource.AiPacks)?.packNames?.contains(state.name()) == true
+        } ?: return
+        recomputeAiPackStatus(model, model.source as ModelSource.AiPacks)
+    }
 
-            when (connection.responseCode) {
-                HttpURLConnection.HTTP_OK -> {
-                    // Il server non supporta il resume: si riparte da zero
-                    offset = 0
-                    RandomAccessFile(part, "rw").use { it.setLength(0) }
-                }
-                HttpURLConnection.HTTP_PARTIAL -> Unit
-                HttpURLConnection.HTTP_UNAUTHORIZED, HttpURLConnection.HTTP_FORBIDDEN -> {
-                    connection.disconnect()
-                    setStatus(
-                        model,
-                        ModelStatus.Failed(
-                            "Access denied (${connection.responseCode}): check your Hugging Face token and make sure you accepted the model license on huggingface.co.",
-                            resumableBytes = part.length()
-                        )
-                    )
-                    return
-                }
-                else -> {
-                    val code = connection.responseCode
-                    connection.disconnect()
-                    setStatus(
-                        model,
-                        ModelStatus.Failed("Download failed (HTTP $code)", resumableBytes = part.length())
-                    )
-                    return
-                }
+    private fun recomputeAiPackStatus(model: LlmModel, source: ModelSource.AiPacks) {
+        if (isProvisioned(model)) {
+            setStatus(model, ModelStatus.Ready)
+            return
+        }
+        if (allPacksAvailable(model, source)) {
+            appScope.launch(Dispatchers.IO) { assemble(model, source) }
+            return
+        }
+
+        val states = source.packNames.mapNotNull { packStates[it] }
+        val statuses = states.map { it.status() }
+        val current = when {
+            AiPackStatus.FAILED in statuses ->
+                ModelStatus.Failed(
+                    "Google Play download failed (error ${states.first { it.status() == AiPackStatus.FAILED }.errorCode()})."
+                )
+            AiPackStatus.REQUIRES_USER_CONFIRMATION in statuses -> ModelStatus.RequiresConfirmation
+            AiPackStatus.WAITING_FOR_WIFI in statuses -> ModelStatus.WaitingForWifi
+            statuses.any { it == AiPackStatus.DOWNLOADING || it == AiPackStatus.PENDING || it == AiPackStatus.TRANSFERRING } -> {
+                val downloaded = states.sumOf { it.bytesDownloaded() }
+                val total = states.sumOf { it.totalBytesToDownload() }
+                    .takeIf { it > 0 } ?: model.approxSizeBytes
+                ModelStatus.Downloading(downloaded, total)
             }
+            statuses.isNotEmpty() && statuses.all { it == AiPackStatus.COMPLETED } -> ModelStatus.Assembling
+            else -> ModelStatus.NotInstalled
+        }
+        setStatus(model, current)
+    }
 
-            val total = model.sizeBytes
-                ?: connection.contentLengthLong.takeIf { it > 0 }?.plus(offset)
-            var downloaded = offset
-            setStatus(model, ModelStatus.Downloading(downloaded, total))
-
-            connection.inputStream.use { input ->
-                RandomAccessFile(part, "rw").use { output ->
-                    output.seek(offset)
-                    val buffer = ByteArray(BUFFER_SIZE)
-                    var lastUpdate = 0L
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val read = input.read(buffer)
-                        if (read == -1) break
-                        output.write(buffer, 0, read)
-                        downloaded += read
-                        val now = System.currentTimeMillis()
-                        if (now - lastUpdate > 300) {
-                            lastUpdate = now
-                            setStatus(model, ModelStatus.Downloading(downloaded, total))
-                        }
+    /** Ricompone i chunk dei pack in un unico .task utilizzabile da LiteRT. */
+    private suspend fun assemble(model: LlmModel, source: ModelSource.AiPacks) =
+        provisionMutex.withLock {
+            if (isProvisioned(model)) {
+                setStatus(model, ModelStatus.Ready)
+                return@withLock
+            }
+            setStatus(model, ModelStatus.Assembling)
+            val destination = File(modelsDir(), model.fileName)
+            val temp = File(modelsDir(), "${model.fileName}.assembling")
+            runCatching {
+                temp.outputStream().use { output ->
+                    source.packNames.forEach { packName ->
+                        val chunk = chunkFile(packName, source)
+                            ?: error("Chunk missing in AI pack $packName")
+                        chunk.inputStream().use { it.copyTo(output, BUFFER_SIZE) }
                     }
                 }
+                check(temp.renameTo(destination)) { "Cannot move assembled model into place" }
+                // I pack non servono più: si libera il doppio dello spazio
+                source.packNames.forEach { aiPackManager.removePack(it) }
+                setStatus(model, ModelStatus.Ready)
+            }.onFailure { error ->
+                Log.w(TAG, "Model assembly failed", error)
+                temp.delete()
+                setStatus(
+                    model,
+                    ModelStatus.Failed("Model preparation failed: ${error.message ?: error.javaClass.simpleName}")
+                )
             }
-            connection.disconnect()
+        }
 
-            if (model.sizeBytes != null && downloaded != model.sizeBytes) {
+    private fun allPacksAvailable(model: LlmModel, source: ModelSource.AiPacks): Boolean =
+        source.packNames.all { chunkFile(it, source) != null }
+
+    private fun chunkFile(packName: String, source: ModelSource.AiPacks): File? {
+        val location = aiPackManager.getPackLocation(packName) ?: return null
+        val assetsPath = location.assetsPath() ?: return null
+        return File(assetsPath, source.chunkAssetName(packName)).takeIf { it.exists() }
+    }
+
+    // endregion
+
+    // region Modello embeddato nell'APK (flavor firebase)
+
+    private suspend fun provisionBundled(model: LlmModel, source: ModelSource.BundledAssets) =
+        provisionMutex.withLock {
+            if (isProvisioned(model)) {
+                setStatus(model, ModelStatus.Ready)
+                return@withLock
+            }
+            setStatus(model, ModelStatus.Assembling)
+            val destination = File(modelsDir(), model.fileName)
+            val temp = File(modelsDir(), "${model.fileName}.copying")
+            runCatching {
+                temp.outputStream().use { output ->
+                    source.assetPaths.forEach { assetPath ->
+                        context.assets.open(assetPath).use { it.copyTo(output, BUFFER_SIZE) }
+                    }
+                }
+                check(temp.renameTo(destination)) { "Cannot move model into place" }
+                setStatus(model, ModelStatus.Ready)
+            }.onFailure { error ->
+                Log.w(TAG, "Bundled model provisioning failed", error)
+                temp.delete()
                 setStatus(
                     model,
                     ModelStatus.Failed(
-                        "Incomplete download (${downloaded / MB} of ${model.sizeBytes / MB} MB) — tap Resume to continue.",
-                        resumableBytes = downloaded
+                        "Model not available in this build: ${error.message ?: error.javaClass.simpleName}"
                     )
                 )
-                return
-            }
-
-            val destination = File(modelsDir(), model.fileName)
-            if (!part.renameTo(destination)) {
-                part.copyTo(destination, overwrite = true)
-                part.delete()
-            }
-            setStatus(model, ModelStatus.Ready)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "Download failed for ${model.id}", e)
-            setStatus(
-                model,
-                ModelStatus.Failed(
-                    "Download error: ${e.message ?: e.javaClass.simpleName} — tap Resume to retry.",
-                    resumableBytes = part.length()
-                )
-            )
-        }
-    }
-
-    /**
-     * Segue i redirect manualmente: l'header Authorization va inviato solo a
-     * huggingface.co, mai al CDN firmato (che altrimenti rifiuta la richiesta).
-     */
-    private fun openFollowingRedirects(model: LlmModel, offset: Long): HttpURLConnection {
-        var url = URL(model.url)
-        val token = settings.hfToken.value
-        repeat(MAX_REDIRECTS) {
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                instanceFollowRedirects = false
-                connectTimeout = 20_000
-                readTimeout = 30_000
-                if (model.requiresHfToken && token.isNotBlank() && url.host.endsWith("huggingface.co")) {
-                    setRequestProperty("Authorization", "Bearer $token")
-                }
-                if (offset > 0) setRequestProperty("Range", "bytes=$offset-")
-            }
-            val code = connection.responseCode
-            if (code in 300..399) {
-                val location = connection.getHeaderField("Location")
-                    ?: throw IllegalStateException("Redirect without Location header")
-                connection.disconnect()
-                url = URL(url, location)
-            } else {
-                return connection
             }
         }
-        throw IllegalStateException("Too many redirects")
-    }
+
+    // endregion
+
+    private fun isProvisioned(model: LlmModel): Boolean = modelFile(model).exists()
 
     private fun setStatus(model: LlmModel, status: ModelStatus) {
         _statuses.update { it + (model.id to status) }
@@ -232,12 +268,8 @@ class ModelRepository(
         (context.getExternalFilesDir("models") ?: File(context.filesDir, "models"))
             .apply { mkdirs() }
 
-    private fun partFile(model: LlmModel): File = File(modelsDir(), "${model.fileName}.part")
-
     private companion object {
         const val TAG = "ModelRepository"
-        const val BUFFER_SIZE = 256 * 1024
-        const val MAX_REDIRECTS = 6
-        const val MB = 1024L * 1024L
+        const val BUFFER_SIZE = 1024 * 1024
     }
 }

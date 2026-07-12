@@ -17,8 +17,9 @@ captures/
 *.jks
 *.keystore
 
-# Modelli AI (troppo grandi per il repo — l'app li scarica in-app)
+# Modelli AI (troppo grandi per il repo — arrivano via Play come AI pack)
 *.tflite
 *.task
+gemma3n_e2b_part*/src/main/assets/model.part*
 # ...tranne il classificatore bundlato nell'APK (~24 MB)
 !app/src/main/assets/models/ingredients.tflite

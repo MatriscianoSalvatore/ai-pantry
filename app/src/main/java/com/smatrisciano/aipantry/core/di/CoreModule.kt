@@ -1,7 +1,7 @@
 package com.smatrisciano.aipantry.core.di
 
 import androidx.room.Room
-import com.smatrisciano.aipantry.core.data.ai.AiSettings
+import com.google.android.play.core.aipacks.AiPackManagerFactory
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.inventory.data.local.PantryDatabase
@@ -22,7 +22,7 @@ val coreModule = module {
     single { get<PantryDatabase>().ingredientDao() }
 
     single { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
-    single { AiSettings(androidContext()) }
+    single { AiPackManagerFactory.getInstance(androidContext()) }
     single { ModelRepository(androidContext(), get(), get()) }
     single { LlmEngineHolder(androidContext()) }
 }

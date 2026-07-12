@@ -21,3 +21,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "AI Pantry"
 include(":app")
+// AI pack (Play for On-device AI): Gemma 3n E2B splittato in chunk ≤1.5GB
+include(":gemma3n_e2b_part0")
+include(":gemma3n_e2b_part1")
+include(":gemma3n_e2b_part2")

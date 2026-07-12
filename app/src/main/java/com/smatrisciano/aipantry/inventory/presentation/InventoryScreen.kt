@@ -9,18 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -88,9 +88,6 @@ private fun InventoryScreen(
                             Icon(Icons.Default.DeleteSweep, contentDescription = "Clear all")
                         }
                     }
-                    IconButton(onClick = { onAction(Navigation.GoToAiSetup) }) {
-                        Icon(Icons.Default.SmartToy, contentDescription = "AI settings")
-                    }
                 }
             )
         }
@@ -100,10 +97,7 @@ private fun InventoryScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            AiStatusBanner(
-                state = state,
-                onClick = { onAction(Navigation.GoToAiSetup) }
-            )
+            AiStatusBanner(state = state)
             if (state.isEmpty) {
                 EmptyPantry(
                     modifier = Modifier
@@ -167,12 +161,8 @@ private fun InventoryScreen(
 }
 
 @Composable
-private fun AiStatusBanner(
-    state: InventoryState,
-    onClick: () -> Unit
-) {
+private fun AiStatusBanner(state: InventoryState) {
     Surface(
-        onClick = onClick,
         color = if (state.isAiReady) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
@@ -187,17 +177,17 @@ private fun AiStatusBanner(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = if (state.isAiReady) Icons.Default.CheckCircle else Icons.Default.SmartToy,
-                contentDescription = null
-            )
+            if (state.isAiReady) {
+                Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null)
+            } else {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = state.aiStatusLabel,
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.weight(1f)
             )
-            Icon(Icons.Default.ChevronRight, contentDescription = null)
         }
     }
 }

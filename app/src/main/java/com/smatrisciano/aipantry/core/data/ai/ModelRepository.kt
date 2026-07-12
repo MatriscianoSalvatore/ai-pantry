@@ -2,8 +2,6 @@ package com.smatrisciano.aipantry.core.data.ai
 
 import android.content.Context
 import android.util.Log
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.IntentSenderRequest
 import com.google.android.play.core.aipacks.AiPackManager
 import com.google.android.play.core.aipacks.AiPackState
 import com.google.android.play.core.aipacks.AiPackStateUpdateListener
@@ -71,47 +69,6 @@ class ModelRepository(
     fun readyActiveModel(): LlmModel? =
         activeModel().takeIf { _statuses.value[it.id] == ModelStatus.Ready }
 
-    /** Avvia (o ritenta) il provisioning del modello. */
-    fun startDownload(model: LlmModel) {
-        when (val source = model.source) {
-            is ModelSource.AiPacks -> {
-                setStatus(model, ModelStatus.Downloading(0, model.approxSizeBytes))
-                appScope.launch(Dispatchers.IO) {
-                    runCatching { aiPackManager.fetch(source.packNames).await() }
-                        .onFailure { error ->
-                            Log.w(TAG, "AI pack fetch failed", error)
-                            setStatus(
-                                model,
-                                ModelStatus.Failed(
-                                    "Google Play couldn't start the download: " +
-                                        "${error.message ?: error.javaClass.simpleName}. " +
-                                        "Make sure the app is installed from Play (or bundletool)."
-                                )
-                            )
-                        }
-                }
-            }
-            is ModelSource.BundledAssets ->
-                appScope.launch(Dispatchers.IO) { provisionBundled(model, source) }
-        }
-    }
-
-    fun cancelDownload(model: LlmModel) {
-        (model.source as? ModelSource.AiPacks)?.let { aiPackManager.cancel(it.packNames) }
-        setStatus(model, ModelStatus.NotInstalled)
-    }
-
-    fun deleteModel(model: LlmModel) {
-        File(modelsDir(), model.fileName).delete()
-        (model.source as? ModelSource.AiPacks)?.packNames?.forEach { aiPackManager.removePack(it) }
-        setStatus(model, ModelStatus.NotInstalled)
-    }
-
-    /** Dialog di Play per confermare download su rete mobile / senza Wi-Fi. */
-    fun showConfirmationDialog(launcher: ActivityResultLauncher<IntentSenderRequest>) {
-        aiPackManager.showConfirmationDialog(launcher)
-    }
-
     private suspend fun refresh() {
         cleanupOrphanedFiles()
         LlmCatalog.all.forEach { model ->
@@ -134,14 +91,24 @@ class ModelRepository(
             assemble(model, source)
             return
         }
-        runCatching { aiPackManager.getPackStates(source.packNames).await() }
+        // Zero-touch: se i pack non sono ancora sul device li richiediamo subito
+        // a Play (fast-follow parte da solo dopo l'install, ma questo copre anche
+        // on-demand e ritenta se il primo tentativo era fallito)
+        setStatus(model, ModelStatus.Downloading(0, model.approxSizeBytes))
+        runCatching { aiPackManager.fetch(source.packNames).await() }
             .onSuccess { states ->
                 states.packStates().values.forEach { packStates[it.name()] = it }
                 recomputeAiPackStatus(model, source)
             }
-            .onFailure {
-                Log.w(TAG, "getPackStates failed", it)
-                setStatus(model, ModelStatus.NotInstalled)
+            .onFailure { error ->
+                Log.w(TAG, "AI pack fetch failed", error)
+                setStatus(
+                    model,
+                    ModelStatus.Failed(
+                        "Google Play couldn't deliver the model: " +
+                            "${error.message ?: error.javaClass.simpleName}"
+                    )
+                )
             }
     }
 

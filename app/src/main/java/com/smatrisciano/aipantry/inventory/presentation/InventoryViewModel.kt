@@ -30,9 +30,10 @@ class InventoryViewModel(
             isAiReady = status == ModelStatus.Ready,
             aiStatusLabel = when (status) {
                 ModelStatus.Ready -> "${activeModel.displayName} ready · on-device"
-                is ModelStatus.Downloading -> "Downloading ${activeModel.displayName} from Play…"
+                is ModelStatus.Downloading -> "Downloading ${activeModel.displayName}…"
                 ModelStatus.Assembling -> "Preparing ${activeModel.displayName}…"
-                else -> "AI model not ready — tap to set up ${activeModel.displayName}"
+                is ModelStatus.Failed -> "AI model unavailable — restart the app to retry"
+                else -> "Preparing ${activeModel.displayName}…"
             }
         )
     }.stateIn(

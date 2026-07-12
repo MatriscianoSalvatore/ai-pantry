@@ -7,5 +7,10 @@ data class RecipesState(
     val progressLog: List<String> = emptyList(),
     val engineName: String = "",
     val recipes: List<Recipe> = emptyList(),
-    val ingredientCount: Int = 0
+    val ingredientCount: Int = 0,
+    /** Errore della generazione lista, mostrato con un pulsante Retry. */
+    val error: String? = null,
+    /** Generazione on-demand delle istruzioni della ricetta aperta. */
+    val isDetailLoading: Boolean = false,
+    val detailError: String? = null
 )

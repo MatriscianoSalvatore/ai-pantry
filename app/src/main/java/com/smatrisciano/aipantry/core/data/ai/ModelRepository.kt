@@ -40,7 +40,8 @@ sealed interface ModelStatus {
 class ModelRepository(
     private val context: Context,
     private val aiPackManager: AiPackManager,
-    private val appScope: CoroutineScope
+    private val appScope: CoroutineScope,
+    private val engineHolder: LlmEngineHolder
 ) {
 
     private val _statuses = MutableStateFlow<Map<String, ModelStatus>>(emptyMap())
@@ -112,6 +113,7 @@ class ModelRepository(
     }
 
     private suspend fun refresh() {
+        cleanupOrphanedFiles()
         LlmCatalog.all.forEach { model ->
             if (isProvisioned(model)) {
                 setStatus(model, ModelStatus.Ready)
@@ -260,8 +262,38 @@ class ModelRepository(
 
     private fun isProvisioned(model: LlmModel): Boolean = modelFile(model).exists()
 
+    /** Rimuove modelli di versioni precedenti dell'app (es. dopo un cambio di catalogo). */
+    private fun cleanupOrphanedFiles() {
+        val known = LlmCatalog.all.map { it.fileName }.toSet()
+        modelsDir().listFiles()?.forEach { file ->
+            val baseName = file.name.removeSuffix(".assembling").removeSuffix(".copying")
+            if (baseName !in known) {
+                Log.i(TAG, "Deleting orphaned model file ${file.name} (${file.length()} bytes)")
+                file.delete()
+            }
+        }
+    }
+
     private fun setStatus(model: LlmModel, status: ModelStatus) {
         _statuses.update { it + (model.id to status) }
+        if (status == ModelStatus.Ready) warmUpEngine(model)
+    }
+
+    /**
+     * Pre-carica il motore LiteRT in background appena il modello è pronto:
+     * il primo scan/generazione non paga i ~30-60s di caricamento.
+     */
+    private val warmedUp = mutableSetOf<String>()
+
+    private fun warmUpEngine(model: LlmModel) {
+        if (!warmedUp.add(model.id)) return
+        appScope.launch(Dispatchers.Default) {
+            runCatching { engineHolder.acquire(model, modelFile(model)) }
+                .onFailure {
+                    Log.w(TAG, "Engine warm-up failed", it)
+                    warmedUp.remove(model.id)
+                }
+        }
     }
 
     private fun modelsDir(): File =

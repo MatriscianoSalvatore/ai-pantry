@@ -24,9 +24,9 @@ split -b "$CHUNK" "$MODEL" "$TMP/chunk_"
 i=0
 for f in "$TMP"/chunk_*; do
   # Nome unico per pack: bundletool rifiuta entry omonime con contenuto diverso
-  DEST="$ROOT/gemma3n_e2b_part$i/src/main/assets/model.part$i"
+  DEST="$ROOT/llm_pack_$i/src/main/assets/model.part$i"
   mkdir -p "$(dirname "$DEST")"
-  rm -f "$ROOT/gemma3n_e2b_part$i/src/main/assets/model.part"*
+  rm -f "$ROOT/llm_pack_$i/src/main/assets/model.part"*
   cp "$f" "$DEST"
   echo "  → ${DEST#"$ROOT"/} ($(stat -f%z "$DEST" 2>/dev/null || stat -c%s "$DEST") byte)"
   i=$((i+1))

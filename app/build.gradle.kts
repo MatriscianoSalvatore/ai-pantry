@@ -61,7 +61,7 @@ android {
     }
 
     // Play for On-device AI: il modello LLM viaggia come AI pack via Play
-    assetPacks += listOf(":gemma3n_e2b_part0", ":gemma3n_e2b_part1", ":gemma3n_e2b_part2")
+    assetPacks += listOf(":llm_pack_0", ":llm_pack_1", ":llm_pack_2")
 }
 
 dependencies {

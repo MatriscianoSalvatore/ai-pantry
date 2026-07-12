@@ -3,7 +3,7 @@ plugins {
 }
 
 aiPack {
-    packName = "gemma3n_e2b_part0"
+    packName = "llm_pack_0"
     dynamicDelivery {
         deliveryType = "fast-follow"
     }

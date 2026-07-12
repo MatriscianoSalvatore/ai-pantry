@@ -4,16 +4,22 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
+import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +45,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Kitchen
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.ShoppingBasket
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,6 +69,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -161,7 +170,19 @@ private fun CameraContent(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val imageCapture = remember { ImageCapture.Builder().build() }
+    val imageCapture = remember {
+        // Il sensore full-res (es. 50MP) produrrebbe bitmap da centinaia di MB, che si
+        // sommano ai ~3GB del modello LLM già residente in memoria durante l'inferenza.
+        ImageCapture.Builder()
+            .setResolutionSelector(
+                ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(Size(1280, 960), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)
+                    )
+                    .build()
+            )
+            .build()
+    }
 
     AndroidView(
         modifier = Modifier.fillMaxSize(),
@@ -184,6 +205,16 @@ private fun CameraContent(
             }
         }
     )
+
+    // Fermo-immagine: dopo lo scatto si vede la foto, non il preview live
+    state.capturedPhoto?.let { photo ->
+        Image(
+            bitmap = photo.asImageBitmap(),
+            contentDescription = "Captured photo",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -216,25 +247,89 @@ private fun CameraContent(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        ShutterButton(
-            isAnalyzing = state.isAnalyzing,
-            onClick = {
-                takePhoto(context, imageCapture) { bitmap ->
-                    onAction(Interaction.OnPhotoCaptured(bitmap))
+        if (state.error != null) {
+            DetectionError(
+                message = state.error,
+                onRetry = { onAction(Interaction.OnRetryClick) }
+            )
+        } else {
+            val galleryLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.PickVisualMedia()
+            ) { uri ->
+                uri?.let {
+                    decodeGalleryImage(context, it)?.let { bitmap ->
+                        onAction(Interaction.OnPhotoCaptured(bitmap))
+                    }
                 }
             }
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = if (state.isAnalyzing) {
-                "Detecting ingredients on-device…"
-            } else {
-                "Point at your ${if (state.target == ScanTarget.FRIDGE) "fridge" else "pantry"} and shoot"
-            },
-            color = Color.White,
-            style = MaterialTheme.typography.bodyMedium
-        )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Placeholder simmetrico per tenere lo shutter centrato
+                Spacer(modifier = Modifier.size(48.dp))
+                Spacer(modifier = Modifier.width(28.dp))
+                ShutterButton(
+                    isAnalyzing = state.isAnalyzing,
+                    onClick = {
+                        takePhoto(context, imageCapture) { bitmap ->
+                            onAction(Interaction.OnPhotoCaptured(bitmap))
+                        }
+                    }
+                )
+                Spacer(modifier = Modifier.width(28.dp))
+                IconButton(
+                    onClick = {
+                        galleryLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    enabled = !state.isAnalyzing,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhotoLibrary,
+                        contentDescription = "Pick from gallery",
+                        tint = Color.White
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = if (state.isAnalyzing) {
+                    "Detecting ingredients on-device…"
+                } else {
+                    "Point at your ${if (state.target == ScanTarget.FRIDGE) "fridge" else "pantry"} and shoot"
+                },
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun DetectionError(
+    message: String,
+    onRetry: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color.Black.copy(alpha = 0.6f)
+        ) {
+            Text(
+                text = message,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onRetry) {
+            Text("Take another photo")
+        }
     }
 }
 
@@ -426,10 +521,25 @@ private fun takePhoto(
     )
 }
 
+/**
+ * Decodifica un'immagine dalla galleria in software bitmap ARGB (MediaPipe non
+ * accetta hardware bitmap); ImageDecoder applica da solo la rotazione EXIF.
+ */
+private fun decodeGalleryImage(context: Context, uri: android.net.Uri): Bitmap? =
+    runCatching {
+        val source = ImageDecoder.createSource(context.contentResolver, uri)
+        ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            decoder.isMutableRequired = false
+        }
+    }.getOrNull()
+
 private fun ImageProxy.toRotatedBitmap(): Bitmap {
     val bitmap = toBitmap()
     val rotation = imageInfo.rotationDegrees
     if (rotation == 0) return bitmap
     val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
-    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    bitmap.recycle()
+    return rotated
 }

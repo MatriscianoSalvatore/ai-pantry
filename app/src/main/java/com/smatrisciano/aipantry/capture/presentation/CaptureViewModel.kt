@@ -9,6 +9,7 @@ import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Interaction
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.inventory.domain.models.IngredientSource
 import com.smatrisciano.aipantry.inventory.domain.repository.InventoryRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,25 +42,46 @@ class CaptureViewModel(
             is Interaction.OnScanAnotherClick -> onScanAnother()
             is Interaction.OnAddToPantryClick -> saveInventory()
             is Interaction.OnDetectionRemoved -> removeDetection(action.name)
+            // Retry = torna al preview live per scattare una nuova foto
+            is Interaction.OnRetryClick -> _uiState.update {
+                it.copy(error = null, capturedPhoto = null, isAnalyzing = false)
+            }
         }
     }
 
     private fun analyze(bitmap: Bitmap) {
         val target = _uiState.value.target
-        _uiState.update { it.copy(isAnalyzing = true) }
+        _uiState.update { it.copy(isAnalyzing = true, capturedPhoto = bitmap, error = null) }
         viewModelScope.launch {
-            val detections = detector.detect(bitmap, target)
-            detections.forEach { sourceByName.putIfAbsent(it.name.lowercase(), target) }
-            _uiState.update { state ->
-                val merged = (state.accumulated + detections).distinctBy { it.name.lowercase() }
-                state.copy(
-                    isAnalyzing = false,
-                    lastDetections = detections,
-                    accumulated = merged,
-                    showResults = true,
-                    engineName = detector.engineName
-                )
-            }
+            runCatching { detector.detect(bitmap, target) }
+                .onSuccess { detections ->
+                    if (detections.isEmpty()) {
+                        _uiState.update {
+                            it.copy(
+                                isAnalyzing = false,
+                                error = "No ingredients recognized in this photo. Try a closer shot of a single ingredient."
+                            )
+                        }
+                        return@onSuccess
+                    }
+                    detections.forEach { sourceByName.putIfAbsent(it.name.lowercase(), target) }
+                    _uiState.update { state ->
+                        val merged = (state.accumulated + detections).distinctBy { it.name.lowercase() }
+                        state.copy(
+                            isAnalyzing = false,
+                            lastDetections = detections,
+                            accumulated = merged,
+                            showResults = true,
+                            engineName = detector.engineName
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    _uiState.update {
+                        it.copy(isAnalyzing = false, error = error.message ?: "Ingredient detection failed")
+                    }
+                }
         }
     }
 
@@ -67,7 +89,9 @@ class CaptureViewModel(
         _uiState.update { state ->
             state.copy(
                 showResults = false,
+                capturedPhoto = null,
                 lastDetections = emptyList(),
+                error = null,
                 // dopo il frigo si passa automaticamente alla dispensa
                 target = if (state.target == ScanTarget.FRIDGE) ScanTarget.PANTRY else state.target
             )

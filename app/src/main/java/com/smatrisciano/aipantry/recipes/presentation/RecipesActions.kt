@@ -4,6 +4,7 @@ sealed interface RecipesActions {
 
     sealed interface Interaction : RecipesActions {
         data object OnRegenerateClick : Interaction
+        data class OnRecipeOpened(val recipeIndex: Int) : Interaction
     }
 
     sealed interface Navigation : RecipesActions {

@@ -23,6 +23,6 @@ val coreModule = module {
 
     single { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
     single { AiPackManagerFactory.getInstance(androidContext()) }
-    single { ModelRepository(androidContext(), get(), get()) }
     single { LlmEngineHolder(androidContext()) }
+    single { ModelRepository(androidContext(), get(), get(), get()) }
 }

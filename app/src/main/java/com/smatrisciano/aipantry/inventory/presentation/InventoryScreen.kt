@@ -22,7 +22,7 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -93,13 +93,6 @@ private fun InventoryScreen(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { onAction(Navigation.GoToCapture) },
-                icon = { Icon(Icons.Default.PhotoCamera, contentDescription = null) },
-                text = { Text("Scan") }
-            )
         }
     ) { padding ->
         Column(
@@ -143,16 +136,30 @@ private fun InventoryScreen(
                         }
                     }
                 }
-                Button(
-                    onClick = { onAction(Navigation.GoToRecipes) },
+                // Scan e ricette sulla stessa riga: niente FAB che copre il bottone
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .padding(bottom = 16.dp)
+                        .padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("What can I cook? (${state.totalCount} ingredients)")
+                    Button(
+                        onClick = { onAction(Navigation.GoToRecipes) },
+                        // Senza fallback demo le ricette esistono solo col modello pronto
+                        enabled = state.isAiReady,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("What can I cook? (${state.totalCount})")
+                    }
+                    FilledTonalButton(onClick = { onAction(Navigation.GoToCapture) }) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Scan")
+                    }
                 }
             }
         }

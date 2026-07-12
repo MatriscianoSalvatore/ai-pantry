@@ -18,6 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,17 +48,34 @@ fun RecipeDetailScreenRoot(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val recipe = state.recipes.getOrNull(recipeIndex)
+
+    // Le istruzioni si generano on-demand alla prima apertura
+    LaunchedEffect(recipeIndex) {
+        viewModel.onAction(RecipesActions.Interaction.OnRecipeOpened(recipeIndex))
+    }
+
     if (recipe == null) {
         onBack()
         return
     }
-    RecipeDetailScreen(recipe = recipe, onBack = onBack)
+    RecipeDetailScreen(
+        recipe = recipe,
+        isDetailLoading = state.isDetailLoading,
+        detailError = state.detailError,
+        onRetryDetails = {
+            viewModel.onAction(RecipesActions.Interaction.OnRecipeOpened(recipeIndex))
+        },
+        onBack = onBack
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RecipeDetailScreen(
     recipe: Recipe,
+    isDetailLoading: Boolean,
+    detailError: String?,
+    onRetryDetails: () -> Unit,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -127,6 +147,31 @@ private fun RecipeDetailScreen(
             }
 
             SectionTitle("Instructions")
+            if (recipe.steps.isEmpty() && isDetailLoading) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Writing the instructions on-device…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (recipe.steps.isEmpty() && !isDetailLoading && detailError != null) {
+                Text(
+                    text = detailError,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                Button(onClick = onRetryDetails) {
+                    Text("Retry")
+                }
+            }
             recipe.steps.forEachIndexed { index, step ->
                 Row(modifier = Modifier.padding(vertical = 6.dp)) {
                     Surface(

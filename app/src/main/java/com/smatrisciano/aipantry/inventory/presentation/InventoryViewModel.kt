@@ -32,7 +32,7 @@ class InventoryViewModel(
                 ModelStatus.Ready -> "${activeModel.displayName} ready · on-device"
                 is ModelStatus.Downloading -> "Downloading ${activeModel.displayName} from Play…"
                 ModelStatus.Assembling -> "Preparing ${activeModel.displayName}…"
-                else -> "Demo AI active — tap to set up ${activeModel.displayName}"
+                else -> "AI model not ready — tap to set up ${activeModel.displayName}"
             }
         )
     }.stateIn(

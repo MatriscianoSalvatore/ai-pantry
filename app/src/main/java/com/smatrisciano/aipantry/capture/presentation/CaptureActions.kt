@@ -11,6 +11,7 @@ sealed interface CaptureActions {
         data object OnScanAnotherClick : Interaction
         data object OnAddToPantryClick : Interaction
         data class OnDetectionRemoved(val name: String) : Interaction
+        data object OnRetryClick : Interaction
     }
 
     sealed interface Navigation : CaptureActions {

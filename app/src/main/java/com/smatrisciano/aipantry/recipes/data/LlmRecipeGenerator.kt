@@ -162,12 +162,18 @@ class LlmRecipeGenerator(
 
     private fun buildDetailsPrompt(recipe: Recipe): String {
         val names = (recipe.usedIngredients + recipe.missingIngredients).joinToString { it.name }
-        // Prompt breve: meno token in input = meno prefill = più veloce su CPU
+        // Descrizioni dei campi (non valori di esempio: il 1B li copierebbe pari
+        // pari). Metric only. Corto ma con schema chiaro.
         return """
-            Recipe "${recipe.title}", ingredients: $names.
-            Metric amounts only (g, ml — never tbsp/cups).
-            Output ONLY this JSON object:
-            {"whySuitable":string,"ingredients":[{"name":string,"amount":string}],"steps":[4-8 strings],"variants":[up to 3 strings]}
+            Recipe: "${recipe.title}". Ingredients: $names.
+            Give real metric amounts (g/ml, never tbsp/cups) and real cooking steps.
+            Respond with ONLY a JSON object (no markdown):
+            {
+              "whySuitable": string (one short sentence why it fits),
+              "ingredients": [{"name": string, "amount": string in g or ml}],
+              "steps": [string] (4 to 8 real cooking steps),
+              "variants": [string] (up to 3 variations)
+            }
         """.trimIndent()
     }
 

@@ -150,46 +150,26 @@ class LlmRecipeGenerator(
         .build()
 
     private fun buildListPrompt(ingredients: List<Ingredient>): String {
-        val inventoryList = ingredients.joinToString("\n") { "- ${it.name} (${it.quantity})" }
+        val names = ingredients.joinToString(", ") { it.name }
+        // Prompt breve: meno token in input = meno prefill = più veloce su CPU
         return """
-            You are a cooking assistant. Suggest recipes using ONLY these available ingredients
-            (plus pantry staples which are always available: water, salt, pepper, olive oil,
-            sugar, flour, bread, butter, vinegar).
-            Prefer recipes that maximize ingredient usage and minimize waste. Order by relevance.
-
-            Available ingredients:
-            $inventoryList
-
-            Use METRIC amounts: grams (g) for solids and millilitres (ml) for liquids.
-            Do NOT use tablespoons, teaspoons, cups, or "pinch".
-
-            Respond with ONLY a JSON array (no markdown, no extra text) of exactly 4 recipes.
-            Each recipe object has EXACTLY these fields and nothing else:
-            {
-              "title": string,
-              "whySuitable": string (one short sentence),
-              "prepTimeMinutes": int,
-              "difficulty": "EASY" | "MEDIUM" | "HARD",
-              "usedIngredients": [string] (each item formatted as Ingredient - amount in g or ml, for example Pasta - 200 g, Milk - 250 ml),
-              "missingIngredients": [string] (ALWAYS present, same Ingredient - amount format in g or ml: ingredients still to buy, [] if none)
-            }
-            Do NOT include cooking steps.
+            Ingredients: $names (plus salt, pepper, oil, water, flour, sugar).
+            Output ONLY a JSON array of 4 recipes, each exactly:
+            {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[names]}
+            No text, no amounts, no steps.
         """.trimIndent()
     }
 
-    private fun buildDetailsPrompt(recipe: Recipe): String = """
-        Recipe: "${recipe.title}".
-        Ingredients to use: ${recipe.usedIngredients.joinToString()}
-        (plus water, salt, pepper, olive oil${
-        if (recipe.missingIngredients.isNotEmpty()) ", and: " + recipe.missingIngredients.joinToString() else ""
-    }).
-
-        Respond with ONLY a JSON object (no markdown, no extra text):
-        {
-          "steps": [string] (4 to 8 clear step-by-step cooking instructions),
-          "variants": [string] (up to 3 possible variations)
-        }
-    """.trimIndent()
+    private fun buildDetailsPrompt(recipe: Recipe): String {
+        val names = (recipe.usedIngredients + recipe.missingIngredients).joinToString { it.name }
+        // Prompt breve: meno token in input = meno prefill = più veloce su CPU
+        return """
+            Recipe "${recipe.title}", ingredients: $names.
+            Metric amounts only (g, ml — never tbsp/cups).
+            Output ONLY this JSON object:
+            {"whySuitable":string,"ingredients":[{"name":string,"amount":string}],"steps":[4-8 strings],"variants":[up to 3 strings]}
+        """.trimIndent()
+    }
 
     /** "2 tbsp Olive Oil" → "olive oil": via quantità e unità di misura. */
     private fun normalizeIngredientName(raw: String): String =

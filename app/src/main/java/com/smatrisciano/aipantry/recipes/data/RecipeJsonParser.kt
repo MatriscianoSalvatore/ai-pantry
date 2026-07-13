@@ -74,11 +74,13 @@ object RecipeJsonParser {
 
     @Serializable
     private data class DetailsDto(
+        @JsonNames("why_suitable", "reason") val whySuitable: String = "",
+        val ingredients: List<JsonElement> = emptyList(),
         val steps: List<JsonElement> = emptyList(),
         val variants: List<JsonElement> = emptyList()
     )
 
-    /** Completa la ricetta con steps/varianti dall'output del secondo stadio. */
+    /** Completa la ricetta con quantità/steps/varianti dall'output del secondo stadio. */
     fun parseDetails(recipe: Recipe, rawOutput: String): Recipe {
         val cleaned = stripFences(rawOutput)
         val objectJson = extractBalanced(cleaned, '{', '}')
@@ -87,7 +89,23 @@ object RecipeJsonParser {
         val dto = json.decodeFromString<DetailsDto>(objectJson)
         val steps = dto.steps.toCleanStrings()
         require(steps.isNotEmpty()) { "No steps in LLM output" }
+
+        // Il 1B nella lista spesso omette le quantità: qui (compito focalizzato)
+        // le produce in modo più affidabile — le fondiamo dove mancano.
+        val amounts = dto.ingredients.toIngredients()
+        val enriched = recipe.usedIngredients.map { ing ->
+            if (ing.quantity.isNotBlank()) return@map ing
+            val match = amounts.firstOrNull {
+                it.quantity.isNotBlank() && it.name.lowercase().let { n ->
+                    n == ing.name.lowercase() || n in ing.name.lowercase() || ing.name.lowercase() in n
+                }
+            }
+            if (match != null) ing.copy(quantity = match.quantity) else ing
+        }
+
         return recipe.copy(
+            whySuitable = dto.whySuitable.ifBlank { recipe.whySuitable },
+            usedIngredients = enriched,
             steps = steps,
             variants = dto.variants.toCleanStrings()
         )

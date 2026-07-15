@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Splitta il modello Gemma 3n E2B nei 3 AI pack (Play for On-device AI).
+# Splitta il modello Gemma 4 E2B (runtime LiteRT-LM) nei 3 AI pack (Play for
+# On-device AI).
 #
-# Il .task va scaricato una tantum da chi builda (richiede account HF con
+# Il .litertlm va scaricato una tantum da chi builda (richiede account HF con
 # licenza Gemma accettata):
-#   https://huggingface.co/google/gemma-3n-E2B-it-litert-preview
+#   https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
 #
-# Uso: ./scripts/prepare_model_packs.sh path/to/gemma-3n-E2B-it-int4.task
+# Uso: ./scripts/prepare_model_packs.sh path/to/gemma4-e2b-it.litertlm
 set -euo pipefail
 
-MODEL="${1:?Uso: $0 path/to/gemma-3n-E2B-it-int4.task}"
+MODEL="${1:?Uso: $0 path/to/gemma4-e2b-it.litertlm}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PARTS=3
 

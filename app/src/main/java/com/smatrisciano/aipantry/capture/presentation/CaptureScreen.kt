@@ -522,8 +522,9 @@ private fun takePhoto(
 }
 
 /**
- * Decodifica un'immagine dalla galleria in software bitmap ARGB (MediaPipe non
- * accetta hardware bitmap); ImageDecoder applica da solo la rotazione EXIF.
+ * Decodifica un'immagine dalla galleria in software bitmap ARGB (serve per
+ * comprimerla in JPEG prima di passarla al modello); ImageDecoder applica da
+ * solo la rotazione EXIF.
  */
 private fun decodeGalleryImage(context: Context, uri: android.net.Uri): Bitmap? =
     runCatching {

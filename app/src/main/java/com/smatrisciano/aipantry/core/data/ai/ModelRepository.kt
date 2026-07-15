@@ -31,7 +31,7 @@ sealed interface ModelStatus {
  * Provisioning del modello LLM senza download HTTP in-app (l'app non ha
  * nemmeno il permesso INTERNET). Due strade, decise dal flavor:
  *  - [ModelSource.AiPacks]: Play for On-device AI — chunk ≤1.5GB consegnati
- *    da Google Play (fast-follow) e ricomposti in un singolo .task;
+ *    da Google Play (fast-follow) e ricomposti in un singolo .litertlm;
  *  - [ModelSource.BundledAsset]: modello embeddato negli assets dell'APK
  *    (Firebase App Distribution) e copiato in files al primo avvio.
  */
@@ -151,7 +151,7 @@ class ModelRepository(
         setStatus(model, current)
     }
 
-    /** Ricompone i chunk dei pack in un unico .task utilizzabile da LiteRT. */
+    /** Ricompone i chunk dei pack in un unico .litertlm utilizzabile da LiteRT-LM. */
     private suspend fun assemble(model: LlmModel, source: ModelSource.AiPacks) =
         provisionMutex.withLock {
             if (isProvisioned(model)) {

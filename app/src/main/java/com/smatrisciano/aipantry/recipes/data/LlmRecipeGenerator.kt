@@ -153,7 +153,7 @@ class LlmRecipeGenerator(
         val names = ingredients.joinToString(", ") { it.name }
         // Prompt breve: meno token in input = meno prefill = più veloce su CPU
         return """
-            Ingredients: $names (plus salt, pepper, oil, water, flour, sugar).
+             Ingredients: $names.  
             Output ONLY a JSON array of 4 recipes, each exactly:
             {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[names]}
             No text, no amounts, no steps.

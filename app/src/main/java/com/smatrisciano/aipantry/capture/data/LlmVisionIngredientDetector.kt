@@ -11,6 +11,7 @@ import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.LlmModel
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.core.data.ai.text
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -70,9 +71,19 @@ class LlmVisionIngredientDetector(
         if (!engineHolder.currentBackendIsGpu()) return sendMessage()
 
         val generation = watchdogScope.async { sendMessage() }
-        return withTimeoutOrNull(DETECTION_TIMEOUT_MS) { generation.await() } ?: run {
+        // Oltre all'hang, la GPU può fallire con eccezione immediata (es.
+        // OpenCL assente sull'emulatore): stessa sorte del timeout
+        val result = try {
+            withTimeoutOrNull(DETECTION_TIMEOUT_MS) { generation.await() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "GPU detection failed", e)
+            null
+        }
+        return result ?: run {
             generation.cancel()
-            Log.w(TAG, "GPU detection timed out after ${DETECTION_TIMEOUT_MS}ms, switching to CPU")
+            Log.w(TAG, "GPU detection failed or timed out, switching to CPU")
             engineHolder.reportGpuUnusable(model)
             sendMessage()
         }

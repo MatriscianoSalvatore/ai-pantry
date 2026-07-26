@@ -9,6 +9,7 @@ import com.smatrisciano.aipantry.core.data.ai.text
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -102,14 +103,22 @@ class LlmRecipeGenerator(
                     conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
                 }
             }
-            withTimeoutOrNull(GENERATION_TIMEOUT_MS) { generation.await() }.also {
-                if (it == null) {
-                    generation.cancel()
-                    Log.w(TAG, "GPU generation timed out after ${GENERATION_TIMEOUT_MS}ms, switching to CPU")
-                    engineHolder.reportGpuUnusable(model)
-                    error("Generation timed out, retrying")
-                }
-            }!!
+            // Oltre all'hang, la GPU può fallire con eccezione immediata (es.
+            // OpenCL assente sull'emulatore): stessa sorte del timeout
+            val result = try {
+                withTimeoutOrNull(GENERATION_TIMEOUT_MS) { generation.await() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "GPU generation failed", e)
+                null
+            }
+            result ?: run {
+                generation.cancel()
+                Log.w(TAG, "GPU generation failed or timed out, switching to CPU")
+                engineHolder.reportGpuUnusable(model)
+                error("Generation failed on GPU, retrying")
+            }
         } else {
             engineHolder.createConversation(model, file, temperature = 0.4, topK = 40).use { conversation ->
                 conversation.sendMessage(Contents.of(Content.Text(prompt))).text()

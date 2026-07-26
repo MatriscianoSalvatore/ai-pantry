@@ -12,6 +12,7 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.SamplerConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -99,10 +100,20 @@ class LlmEngineHolder(private val context: Context) {
                 conversation.sendMessage(Contents.of(Content.Text("List five common fruits, one per line.")))
             }
         }
-        val ok = withTimeoutOrNull(GPU_PROBE_TIMEOUT_MS) { probe.await() } != null
+        // La GPU rotta può manifestarsi in due modi: hang (timeout) oppure
+        // eccezione immediata alla prima inferenza (es. OpenCL assente
+        // sull'emulatore, dove l'init dell'engine invece riesce)
+        val ok = try {
+            withTimeoutOrNull(GPU_PROBE_TIMEOUT_MS) { probe.await() } != null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "GPU probe threw", e)
+            false
+        }
         if (!ok) {
             probe.cancel()
-            Log.w(TAG, "GPU probe timed out — marking GPU unusable and reloading on CPU")
+            Log.w(TAG, "GPU probe failed or timed out — marking GPU unusable and reloading on CPU")
             reportGpuUnusable(model)
             acquire(model, file)
         } else {

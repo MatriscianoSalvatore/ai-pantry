@@ -127,9 +127,11 @@ class LlmEngineHolder(private val context: Context) {
     // significa lasciare inutilizzati quasi tutti i core. Usare TUTTI i core
     // però fa scaldare e throttlare i chip mobile sotto carico sostenuto (min
     // di calcolo), rallentando di nuovo verso la fine — 4 thread è un
-    // compromesso ragionevole tra parallelismo e calore.
+    // compromesso ragionevole tra parallelismo e calore. Sull'emulatore il
+    // throttling termico non esiste: si usano tutti i core disponibili meno uno.
     private val cpuThreadCount: Int =
-        (Runtime.getRuntime().availableProcessors() - 1).coerceIn(1, 4)
+        (Runtime.getRuntime().availableProcessors() - 1)
+            .coerceIn(1, if (isEmulator) Int.MAX_VALUE else 4)
 
     /**
      * La GPU ha prodotto output corrotto o si è piantata: marca il backend rotto
@@ -174,6 +176,11 @@ class LlmEngineHolder(private val context: Context) {
 
     private companion object {
         const val TAG = "LlmEngineHolder"
+
+        val isEmulator: Boolean =
+            android.os.Build.HARDWARE in setOf("ranchu", "goldfish") ||
+                android.os.Build.FINGERPRINT.contains("emulator") ||
+                android.os.Build.FINGERPRINT.contains("generic")
 
         // La sonda GPU all'avvio: se la micro inferenza non risponde in tempo,
         // la GPU è inutilizzabile su questo device

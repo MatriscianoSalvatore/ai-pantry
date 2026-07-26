@@ -43,7 +43,12 @@ class LlmVisionIngredientDetector(
         val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
         require(model.supportsVision) { "Active model has no vision support" }
 
-        val jpeg = bitmap.downscaled().toJpegBytes()
+        // Il warm-up all'avvio ha già deciso il backend, quindi qui è affidabile.
+        // Su CPU ogni patch in più è prefill che l'utente aspetta: si scende a
+        // 256px (~256 patch contro ~1000) accettando meno dettaglio pur di
+        // restare in un tempo di scansione tollerabile.
+        val maxSide = if (engineHolder.currentBackendIsGpu()) 512 else 256
+        val jpeg = bitmap.downscaled(maxSide).toJpegBytes()
         val rawOutput = detectChecked(model, target, jpeg)
         DetectionJsonParser.parse(rawOutput)
     }
@@ -95,11 +100,13 @@ class LlmVisionIngredientDetector(
 
     private fun buildPrompt(target: ScanTarget): String {
         val place = if (target == ScanTarget.FRIDGE) "fridge" else "pantry"
+        // Niente campo confidence nell'output: il parser ha già un default e
+        // ogni campo in più sono token di decode che l'utente aspetta
         return """
             This is a photo of the inside of a $place.
-            Identify every food ingredient you can see.
+            Identify the food ingredients you can see, at most 15.
             Respond with ONLY a JSON array (no markdown, no extra text):
-            [{"name": "short ingredient name", "quantity": "approximate quantity like '2 pcs' or '1 carton'", "confidence": 0.0-1.0}]
+            [{"name": "short ingredient name", "quantity": "approximate quantity like '2 pcs' or '1 carton'"}]
             Only include items you actually see. Use common English ingredient names.
         """.trimIndent()
     }
@@ -108,8 +115,9 @@ class LlmVisionIngredientDetector(
     // il limite 2520) e satura la RAM su device con poco margine, causando un
     // kill silenzioso del processo da parte del low-memory killer di Android
     // a metà inferenza. 512px riduce i patch di ~55% mantenendo abbastanza
-    // dettaglio per riconoscere ingredienti in una foto di frigo/dispensa.
-    private fun Bitmap.downscaled(maxSide: Int = 512): Bitmap {
+    // dettaglio per riconoscere ingredienti in una foto di frigo/dispensa;
+    // su backend CPU si scende a 256px (vedi [detect]).
+    private fun Bitmap.downscaled(maxSide: Int): Bitmap {
         val largest = maxOf(width, height)
         if (largest <= maxSide) return this
         val scale = maxSide.toFloat() / largest

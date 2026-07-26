@@ -46,6 +46,8 @@ class CaptureViewModel(
             is Interaction.OnRetryClick -> _uiState.update {
                 it.copy(error = null, capturedPhoto = null, isAnalyzing = false)
             }
+            is Interaction.OnResultsDismissed -> _uiState.update { it.copy(showResults = false) }
+            is Interaction.OnShowResultsClick -> _uiState.update { it.copy(showResults = true) }
         }
     }
 

@@ -154,7 +154,7 @@ private fun CaptureScreen(
 
         if (state.showResults) {
             ModalBottomSheet(
-                onDismissRequest = { onAction(Interaction.OnScanAnotherClick) },
+                onDismissRequest = { onAction(Interaction.OnResultsDismissed) },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ) {
                 DetectionResults(state = state, onAction = onAction)
@@ -233,12 +233,14 @@ private fun CameraContent(
         Spacer(modifier = Modifier.weight(1f))
 
         if (state.accumulated.isNotEmpty()) {
+            // Tappabile: è la via per riaprire la sheet risultati dopo averla chiusa
             Surface(
+                onClick = { onAction(Interaction.OnShowResultsClick) },
                 shape = RoundedCornerShape(20.dp),
                 color = Color.Black.copy(alpha = 0.6f)
             ) {
                 Text(
-                    text = "${state.accumulated.size} ingredients in this scan session",
+                    text = "${state.accumulated.size} ingredients in this scan session · tap to review",
                     color = Color.White,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)

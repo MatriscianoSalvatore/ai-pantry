@@ -22,3 +22,6 @@ captures/
 *.litertlm
 llm_pack_*/src/main/assets/model.part*
 app/src/beta/assets/llm/
+
+# Encoder MobileCLIP (137MB — lo scarica scripts/prepare_clip_assets.py)
+app/src/main/assets/clip/mobileclip_s2_image.tflite

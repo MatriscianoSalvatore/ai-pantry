@@ -12,6 +12,12 @@ sealed interface CaptureActions {
         data object OnAddToPantryClick : Interaction
         data class OnDetectionRemoved(val name: String) : Interaction
         data object OnRetryClick : Interaction
+
+        /** Swipe-down della sheet risultati: la nasconde senza toccare il resto. */
+        data object OnResultsDismissed : Interaction
+
+        /** Riapre la sheet risultati (pill "N ingredients in this scan session"). */
+        data object OnShowResultsClick : Interaction
     }
 
     sealed interface Navigation : CaptureActions {

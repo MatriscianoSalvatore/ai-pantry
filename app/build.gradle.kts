@@ -55,9 +55,9 @@ android {
             buildConfigField("String", "MODEL_SOURCE", "\"BUNDLED\"")
         }
     }
-    // Il modello .litertlm non va compresso nell'APK: LiteRT-LM lo mappa in memoria
+    // I modelli non vanno compressi nell'APK: i runtime li mappano in memoria
     androidResources {
-        noCompress += listOf("litertlm")
+        noCompress += listOf("litertlm", "tflite")
     }
 
     // Play for On-device AI: il modello LLM viaggia come AI pack via Play
@@ -97,6 +97,11 @@ dependencies {
     implementation(libs.androidx.camera.view)
 
     implementation(libs.litertlm.android)
+    // Gemini Nano on-device via AICore (Prompt API): solo su device supportati,
+    // gating a runtime con checkStatus() — altrove si usa il detector CLIP
+    implementation(libs.mlkit.genai.prompt)
+    // Runtime LiteRT per l'encoder MobileCLIP del detector zero-shot
+    implementation(libs.litert)
 
     implementation(libs.play.ai.delivery)
     implementation(libs.kotlinx.coroutines.play.services)

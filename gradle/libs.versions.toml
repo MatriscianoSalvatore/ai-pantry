@@ -11,8 +11,9 @@ koin = "4.0.4"
 room = "2.7.2"
 serialization = "1.8.0"
 camerax = "1.4.2"
-mediapipeVision = "0.10.35"
-mediapipeGenai = "0.10.35"
+litertlm = "0.14.0"
+mlkitGenaiPrompt = "1.0.0-beta2"
+litert = "1.4.0"
 playAiDelivery = "0.1.1-alpha01"
 coroutinesPlayServices = "1.10.2"
 coreSplashScreen = "1.2.0"
@@ -43,8 +44,9 @@ androidx-camera-core = { group = "androidx.camera", name = "camera-core", versio
 androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
 androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
-mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeVision" }
-mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeGenai" }
+litertlm-android = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version.ref = "litertlm" }
+mlkit-genai-prompt = { group = "com.google.mlkit", name = "genai-prompt", version.ref = "mlkitGenaiPrompt" }
+litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
 play-ai-delivery = { group = "com.google.android.play", name = "ai-delivery", version.ref = "playAiDelivery" }
 kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutinesPlayServices" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

@@ -40,28 +40,29 @@ object LlmCatalog {
     /**
      * Stesso modello per tutti i flavor — cambia solo il canale di consegna,
      * deciso dal flavor `distribution` via BuildConfig.
-     * Gemma 3 1B q4 (ekv2048): leggero e reattivo per la generazione ricette;
-     * la detection ingredienti è del classificatore EfficientNet bundlato.
+     * Gemma 4 E2B int4, multimodale: un solo modello per **sia** detection
+     * ingredienti (vision modality) **sia** generazione ricette — approccio
+     * "solo Gemma", senza detector ausiliari.
      */
-    val gemma1B = LlmModel(
-        id = "gemma-3-1b",
-        displayName = "Gemma 3 1B",
-        fileName = "gemma3-1b-it-q4.task",
+    val gemma4E2B = LlmModel(
+        id = "gemma-4-e2b",
+        displayName = "Gemma 4 E2B",
+        fileName = "gemma4-e2b-it.litertlm",
         source = when (BuildConfig.MODEL_SOURCE) {
             "BUNDLED" -> ModelSource.BundledAssets(
-                listOf("llm/model.part0.task", "llm/model.part1.task", "llm/model.part2.task")
+                listOf("llm/model.part0.litertlm", "llm/model.part1.litertlm", "llm/model.part2.litertlm")
             )
             else -> ModelSource.AiPacks(
                 listOf("llm_pack_0", "llm_pack_1", "llm_pack_2")
             )
         },
-        approxSizeBytes = 554_661_246,
-        supportsVision = false,
+        approxSizeBytes = 2_600_000_000,
+        supportsVision = true,
         license = "Gemma Terms of Use"
     )
 
-    val all: List<LlmModel> = listOf(gemma1B)
-    val default: LlmModel = gemma1B
+    val all: List<LlmModel> = listOf(gemma4E2B)
+    val default: LlmModel = gemma4E2B
 
     fun byId(id: String?): LlmModel = all.firstOrNull { it.id == id } ?: default
 }

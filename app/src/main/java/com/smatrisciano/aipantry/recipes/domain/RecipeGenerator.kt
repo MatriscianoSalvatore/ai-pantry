@@ -4,7 +4,7 @@ import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 
 interface RecipeGenerator {
-    /** Nome del motore mostrato in UI (es. "Gemma 3n E2B · LiteRT" / "Demo mode"). */
+    /** Nome del motore mostrato in UI (es. "Gemma 4 E2B · LiteRT" / "Demo mode"). */
     val engineName: String
 
     /**

@@ -19,10 +19,9 @@ captures/
 
 # Modelli AI LLM (troppo grandi per GitHub, >100MB — arrivano via Play come AI
 # pack o via lo script prepare_*_model.sh)
-*.task
+*.litertlm
 llm_pack_*/src/main/assets/model.part*
 app/src/beta/assets/llm/
-# Classificatori bundlati nell'APK (~24MB ciascuno, sotto il limite): versionati
-*.tflite
-!app/src/main/assets/models/ingredients.tflite
-!app/src/main/assets/models/detector.tflite
+
+# Encoder MobileCLIP (137MB — lo scarica scripts/prepare_clip_assets.py)
+app/src/main/assets/clip/mobileclip_s2_image.tflite

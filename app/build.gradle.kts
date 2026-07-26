@@ -39,9 +39,9 @@ android {
         buildConfig = true
     }
 
-    // Come viene consegnato il modello LLM (Gemma 3n E2B in entrambi i casi):
+    // Come viene consegnato il modello LLM (Gemma 4 E2B in entrambi i casi):
     //  - play: AI pack via Play for On-device AI (chunk ≤1.5GB ricomposti)
-    //  - beta: modello embeddato nell'APK (~3.4GB) da distribuire a mano ai
+    //  - beta: modello embeddato nell'APK (~2.8GB) da distribuire a mano ai
     //          tester (AGP vieta nomi flavor che iniziano con "test")
     flavorDimensions += "distribution"
     productFlavors {
@@ -55,9 +55,9 @@ android {
             buildConfigField("String", "MODEL_SOURCE", "\"BUNDLED\"")
         }
     }
-    // I modelli .tflite/.task non vanno compressi nell'APK: MediaPipe li mappa in memoria
+    // I modelli non vanno compressi nell'APK: i runtime li mappano in memoria
     androidResources {
-        noCompress += listOf("tflite", "task")
+        noCompress += listOf("litertlm", "tflite")
     }
 
     // Play for On-device AI: il modello LLM viaggia come AI pack via Play
@@ -96,8 +96,12 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
 
-    implementation(libs.mediapipe.tasks.vision)
-    implementation(libs.mediapipe.tasks.genai)
+    implementation(libs.litertlm.android)
+    // Gemini Nano on-device via AICore (Prompt API): solo su device supportati,
+    // gating a runtime con checkStatus() — altrove si usa il detector CLIP
+    implementation(libs.mlkit.genai.prompt)
+    // Runtime LiteRT per l'encoder MobileCLIP del detector zero-shot
+    implementation(libs.litert)
 
     implementation(libs.play.ai.delivery)
     implementation(libs.kotlinx.coroutines.play.services)

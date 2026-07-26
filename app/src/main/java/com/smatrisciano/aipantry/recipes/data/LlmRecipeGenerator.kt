@@ -1,12 +1,15 @@
 package com.smatrisciano.aipantry.recipes.data
 
 import android.util.Log
-import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
+import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Contents
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
+import com.smatrisciano.aipantry.core.data.ai.text
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,7 +18,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Generazione ricette on-device con il modello attivo (Gemma 3n) via LiteRT.
+ * Generazione ricette on-device con il modello attivo (Gemma 4 E2B) via LiteRT-LM.
  * Due stadi per minimizzare i token generati: lista leggera subito,
  * istruzioni on-demand quando l'utente apre la ricetta.
  */
@@ -76,7 +79,7 @@ class LlmRecipeGenerator(
 
     /**
      * Inferenza con due protezioni:
-     *  - watchdog: su un driver GPU degradato `generateResponse` può bloccarsi
+     *  - watchdog: su un driver GPU degradato `sendMessage` può bloccarsi
      *    per sempre (chiamata nativa non interrompibile). La eseguiamo in un job
      *    separato e facciamo timeout sull'await: allo scadere si forza la CPU e
      *    si ritenta, invece di lasciare la UI a caricare all'infinito;
@@ -87,7 +90,7 @@ class LlmRecipeGenerator(
         model: com.smatrisciano.aipantry.core.data.ai.LlmModel,
         prompt: String
     ): String {
-        val engine = engineHolder.acquire(model, modelRepository.modelFile(model))
+        val file = modelRepository.modelFile(model)
 
         // Il watchdog serve SOLO a smascherare l'hang della GPU: la CPU non si
         // pianta mai, è solo lenta, quindi va lasciata completare senza limite
@@ -96,23 +99,29 @@ class LlmRecipeGenerator(
             // Job scollegato: se la GPU si pianta, il thread nativo resta bloccato
             // (non killabile) ma la coroutine chiamante prosegue e recupera su CPU
             val generation = watchdogScope.async {
-                LlmInferenceSession.createFromOptions(engine, sessionOptions()).use { session ->
-                    session.addQueryChunk(prompt)
-                    session.generateResponse()
+                engineHolder.createConversation(model, file, temperature = 0.4, topK = 40).use { conversation ->
+                    conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
                 }
             }
-            withTimeoutOrNull(GENERATION_TIMEOUT_MS) { generation.await() }.also {
-                if (it == null) {
-                    generation.cancel()
-                    Log.w(TAG, "GPU generation timed out after ${GENERATION_TIMEOUT_MS}ms, switching to CPU")
-                    engineHolder.reportGpuUnusable(model)
-                    error("Generation timed out, retrying")
-                }
-            }!!
+            // Oltre all'hang, la GPU può fallire con eccezione immediata (es.
+            // OpenCL assente sull'emulatore): stessa sorte del timeout
+            val result = try {
+                withTimeoutOrNull(GENERATION_TIMEOUT_MS) { generation.await() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "GPU generation failed", e)
+                null
+            }
+            result ?: run {
+                generation.cancel()
+                Log.w(TAG, "GPU generation failed or timed out, switching to CPU")
+                engineHolder.reportGpuUnusable(model)
+                error("Generation failed on GPU, retrying")
+            }
         } else {
-            LlmInferenceSession.createFromOptions(engine, sessionOptions()).use { session ->
-                session.addQueryChunk(prompt)
-                session.generateResponse()
+            engineHolder.createConversation(model, file, temperature = 0.4, topK = 40).use { conversation ->
+                conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
             }
         }
 
@@ -143,17 +152,11 @@ class LlmRecipeGenerator(
         throw requireNotNull(lastError)
     }
 
-    // Temperatura bassa: più aderenza al formato JSON richiesto
-    private fun sessionOptions() = LlmInferenceSession.LlmInferenceSessionOptions.builder()
-        .setTemperature(0.4f)
-        .setTopK(40)
-        .build()
-
     private fun buildListPrompt(ingredients: List<Ingredient>): String {
         val names = ingredients.joinToString(", ") { it.name }
         // Prompt breve: meno token in input = meno prefill = più veloce su CPU
         return """
-             Ingredients: $names.  
+            Ingredients: $names.
             Output ONLY a JSON array of 4 recipes, each exactly:
             {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[names]}
             No text, no amounts, no steps.

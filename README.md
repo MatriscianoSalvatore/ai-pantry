@@ -6,7 +6,7 @@ Demo Android (Droidcon) di una pipeline AI **completamente on-device**: fotograf
 - **MobileCLIP-S2** (LiteRT) — detection zero-shot su *qualsiasi* device: è il fallback-ovunque e il motore di default
 - **Gemma 4 E2B** (LiteRT-LM) — generazione ricette: l'unico compito davvero generativo
 
-**L'inferenza è 100% on-device e l'app non ha nemmeno il permesso INTERNET.** Le foto non lasciano mai il dispositivo. I modelli arrivano col canale di installazione: Google Play (AI pack) o embeddati nell'APK.
+**L'inferenza è 100% on-device e l'app non ha nemmeno il permesso INTERNET.** Le foto non lasciano mai il dispositivo. I modelli arrivano col canale di installazione: Google Play (AI pack) o embeddati nell'APK, in beta debug.
 
 ## Flusso demo
 

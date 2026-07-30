@@ -229,12 +229,6 @@ private fun IngredientRow(
                     fontWeight = FontWeight.Medium
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = ingredient.quantity,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
                     LinearProgressIndicator(
                         progress = { ingredient.confidence },
                         modifier = Modifier.width(72.dp)

@@ -1,108 +1,108 @@
 # AI Pantry – Cook from Your Fridge 🥕📷
 
-Demo Android (Droidcon) di una pipeline AI **completamente on-device**: fotografi frigo e dispensa, l'app riconosce gli ingredienti e genera ricette che usano solo ciò che hai. Tre motori AI cooperano, ognuno sul compito per cui è fatto:
+Android demo (Droidcon) of a **fully on-device** AI pipeline: photograph your fridge and pantry, the app recognises the ingredients and generates recipes that use only what you have. Three AI engines cooperate, each on the job it was built for:
 
-- **Gemini Nano** (AICore, via ML Kit GenAI) — detection ingredienti sui device che lo supportano: zero MB nell'APK
-- **MobileCLIP-S2** (LiteRT) — detection zero-shot su *qualsiasi* device: è il fallback-ovunque e il motore di default
-- **Gemma 4 E2B** (LiteRT-LM) — generazione ricette: l'unico compito davvero generativo
+- **Gemini Nano** (AICore, via ML Kit GenAI) — ingredient detection on the devices that support it: zero MB in the APK
+- **MobileCLIP-S2** (LiteRT) — zero-shot detection on *any* device: the everywhere-fallback and the default engine
+- **Gemma 4 E2B** (LiteRT-LM) — recipe generation: the only genuinely generative task
 
-**L'inferenza è 100% on-device e l'app non ha nemmeno il permesso INTERNET.** Le foto non lasciano mai il dispositivo. I modelli arrivano col canale di installazione: Google Play (AI pack) o embeddati nell'APK, in beta debug.
+**Inference is 100% on-device and the app does not even hold the INTERNET permission.** Photos never leave the device. Models arrive through the install channel: Google Play (AI packs) or embedded in the APK, in the beta debug build.
 
-## Flusso demo
+## Demo flow
 
-1. **Scan** → fotografa il frigorifero (chip *Fridge*), poi "Scan another" per la dispensa (*Pantry*). In alternativa allo scatto puoi scegliere una foto dalla galleria. La sheet dei risultati mostra quale engine ha lavorato; chiusa, si riapre dal pill "N ingredients in this scan session".
-2. Gli ingredienti rilevati (con quantità e confidenza; sotto il 22% vengono scartati) finiscono nell'inventario locale (Room).
-3. **What can I cook?** → l'LLM genera 5 ricette ordinate per copertura degli ingredienti (quelle con più ingredienti mancanti vanno in fondo), con tempo, difficoltà, ingredienti usati/mancanti. Aprendo una ricetta, le istruzioni passo-passo e le varianti vengono generate on-demand.
+1. **Scan** → photograph the fridge (*Fridge* chip), then "Scan another" for the pantry (*Pantry*). Instead of taking a picture you can pick a photo from the gallery. The results sheet shows which engine did the work; once dismissed, it reopens from the "N ingredients in this scan session" pill.
+2. The detected ingredients (with confidence; anything below 22% is discarded) land in the local inventory (Room).
+3. **What can I cook?** → the LLM generates 5 recipes ranked by ingredient coverage (the ones with more missing ingredients go last), with time, difficulty, used/missing ingredients. Opening a recipe generates its step-by-step instructions and variations on demand.
 
-## Architettura
+## Architecture
 
 ```
 CameraX / Photo picker → Image capture
         → Ingredient detection ── AdaptiveIngredientDetector
-        │       ├─ Gemini Nano (AICore · ML Kit GenAI) se checkStatus() == AVAILABLE
-        │       └─ MobileCLIP-S2 zero-shot (LiteRT) ovunque — e safety net se Nano fallisce
+        │       ├─ Gemini Nano (AICore · ML Kit GenAI) if checkStatus() == AVAILABLE
+        │       └─ MobileCLIP-S2 zero-shot (LiteRT) everywhere — and safety net if Nano fails
         → Room Database
         → Recipe generation ──── Gemma 4 E2B text-only (LiteRT-LM)
-        │                        stage 1: lista ricette · stage 2: istruzioni on-demand
+        │                        stage 1: recipe list · stage 2: on-demand instructions
         → Jetpack Compose UI
 
-flavor play:  Google Play ──(AI pack ×3, fast-follow)──▶ ModelRepository ──assemble──▶ .litertlm
-flavor beta:  assets APK ──(chunk ×3 nell'APK)────────▶ ModelRepository ──assemble──▶ .litertlm
-MobileCLIP:   assets APK (~140 MB, gitignorato — lo scarica scripts/prepare_clip_assets.py)
+play flavor:  Google Play ──(AI pack ×3, fast-follow)──▶ ModelRepository ──assemble──▶ .litertlm
+beta flavor:  APK assets ──(chunk ×3 inside the APK)───▶ ModelRepository ──assemble──▶ .litertlm
+MobileCLIP:   APK assets (~140 MB, gitignored — fetched by scripts/prepare_clip_assets.py)
 ```
 
-Ogni feature segue Clean Architecture + MVI (`data / domain / presentation`), DI con Koin:
+Every feature follows Clean Architecture + MVI (`data / domain / presentation`), DI with Koin:
 
-- `capture/` — CameraX + photo picker; `AdaptiveIngredientDetector` (selezione runtime), `NanoIngredientDetector` (ML Kit GenAI Prompt API), `ClipZeroShotIngredientDetector` (LiteRT), `LlmVisionIngredientDetector` (detection via Gemma vision: nel codice come terza via, fuori dal percorso di default — minuti per scan quando finisce su CPU)
-- `inventory/` — Room, inventario ingredienti, banner di stato del modello in home, resolver emoji a keyword
-- `recipes/` — `LlmRecipeGenerator` (generazione a due stadi + retry), `RecipeJsonParser` tollerante
-- `core/data/ai/` — `LlmCatalog`, `ModelSource` (AiPacks | BundledAssets), `ModelRepository` (provisioning automatico), `LlmEngineHolder` (cache motore + policy GPU/CPU)
+- `capture/` — CameraX + photo picker; `AdaptiveIngredientDetector` (runtime selection), `NanoIngredientDetector` (ML Kit GenAI Prompt API), `ClipZeroShotIngredientDetector` (LiteRT), `LlmVisionIngredientDetector` (detection via Gemma vision: present in the code as a third route, off the default path — minutes per scan when it ends up on CPU)
+- `inventory/` — Room, ingredient inventory, model status banner on home, keyword emoji resolver
+- `recipes/` — `LlmRecipeGenerator` (two-stage generation + retries), tolerant `RecipeJsonParser`
+- `core/data/ai/` — `LlmCatalog`, `ModelSource` (AiPacks | BundledAssets), `ModelRepository` (automatic provisioning), `LlmEngineHolder` (engine cache + GPU/CPU policy)
 
-## Riconoscimento ingredienti
+## Ingredient recognition
 
-`AdaptiveIngredientDetector` sceglie il motore **a ogni scan**:
+`AdaptiveIngredientDetector` picks the engine **on every scan**:
 
-**Gemini Nano** (dove c'è AICore: Pixel 9/10, Galaxy S25/S26, …) — prompt multimodale foto+testo via ML Kit GenAI Prompt API (`com.google.mlkit:genai-prompt`). La disponibilità è una domanda runtime: `checkStatus()` a ogni uso; se il modello è scaricabile il download parte in background e intanto si usa il fallback. Se Nano fallisce a runtime, si ripiega su CLIP in silenzio.
+**Gemini Nano** (where AICore exists: Pixel 9/10, Galaxy S25/S26, …) — multimodal photo+text prompt via the ML Kit GenAI Prompt API (`com.google.mlkit:genai-prompt`). Availability is a runtime question: `checkStatus()` on every use; if the model is downloadable the download starts in the background and the fallback is used meanwhile. If Nano fails at runtime, it falls back to CLIP silently.
 
-**MobileCLIP-S2 zero-shot** (ovunque, incluso il default) — l'image encoder (~140 MB, LiteRT) embedda crop multi-scala della foto (griglia al 50% e 33% del lato corto, pool di interpreter in parallelo) e li confronta via cosine similarity con gli embedding testuali di **864 ingredienti + 6 label "distrattore"** precomputati offline. Il "classificatore" è un file di testo:
+**MobileCLIP-S2 zero-shot** (everywhere, the default included) — the image encoder (~140 MB, LiteRT) embeds multi-scale crops of the photo (a grid at 50% and 33% of the short side, pool of interpreters running in parallel) and compares them by cosine similarity against the text embeddings of **864 ingredients + 6 "distractor" labels** precomputed offline. The "classifier" is a text file:
 
-- `scripts/ingredient_labels.txt` — una label per riga; sintassi `label|display` per gli alias ("lactose-free milk|milk"), prefisso `~` per i distrattori (assorbono i crop senza cibo, mai riportati)
-- `scripts/prepare_clip_assets.py` — scarica l'encoder da Hugging Face se manca (è gitignorato), calcola gli embedding con open_clip (4 template mediati) e scrive `assets/clip/label_embeddings.json` (~4.4 MB); con `--verify-image` controlla la parità open_clip ↔ TFLite (atteso ≥0.99)
+- `scripts/ingredient_labels.txt` — one label per line; `label|display` syntax for aliases ("lactose-free milk|milk"), a `~` prefix for distractors (they absorb the food-free crops and are never reported)
+- `scripts/prepare_clip_assets.py` — downloads the encoder from Hugging Face if missing (it is gitignored), computes the embeddings with open_clip (4 averaged templates) and writes `assets/clip/label_embeddings.json` (~4.4 MB); with `--verify-image` it checks open_clip ↔ TFLite parity (≥0.99 expected)
 
-Aggiungere un ingrediente = aggiungere una riga e rilanciare lo script. Soglia di confidenza 22%, max 15 risultati per scan; CLIP classifica ma non conta, quindi la quantità è un "1 pc" di cortesia.
+Adding an ingredient = adding a line and re-running the script. Confidence threshold 22%, max 15 results per scan. CLIP classifies but does not count, so no quantity is shown in the app: the field survives in the data model (Nano does fill it in) but a placeholder count is worse than none.
 
-## Il modello LLM: Gemma 4 E2B su LiteRT-LM, due canali di consegna
+## The LLM: Gemma 4 E2B on LiteRT-LM, two delivery channels
 
-**Gemma 4 E2B, multimodale** (formato `.litertlm`, ~2.5 GB — quantizzazione mista 2/4/8-bit) per tutti i flavor — mai download HTTP in-app:
+**Gemma 4 E2B, multimodal** (`.litertlm` format, ~2.5 GB — mixed 2/4/8-bit quantisation) for every flavor — never an in-app HTTP download:
 
-| Flavor | Canale | Note |
-|--------|--------|------|
-| `play` | **Play for On-device AI**: 3 AI pack `fast-follow` (~0.85 GB ciascuno), ricomposti al primo avvio, pack rimossi dopo l'assemblaggio | limite Play: 1.5 GB/pack, 4 GB totali |
-| `beta` | **Embeddato nell'APK** in 3 chunk negli assets (AGP non impacchetta asset >2 GB), ricomposti al primo avvio | APK ~2.9 GB da mandare a mano ai tester; zero azioni richieste |
+| Flavor | Channel | Notes |
+|--------|---------|-------|
+| `play` | **Play for On-device AI**: 3 `fast-follow` AI packs (~0.85 GB each), reassembled on first launch, packs removed after assembly | Play limits: 1.5 GB/pack, 4 GB total |
+| `beta` | **Embedded in the APK** as 3 chunks in the assets (AGP does not package assets >2 GB), reassembled on first launch | ~2.9 GB APK to hand out to testers; zero action required |
 
-Al primo avvio l'app mostra "Preparing Gemma 4 E2B…" per qualche secondo/minuto (copia/ricomposizione dei chunk) e poi è **pronta e offline per sempre**. Il modello va preparato una tantum da chi builda (i chunk sono gitignorati):
+On first launch the app shows "Preparing Gemma 4 E2B…" for a few seconds/minutes (copying/reassembling the chunks) and then it is **ready and offline forever**. The model has to be prepared once by whoever builds (the chunks are gitignored):
 
 ```bash
-# Il .litertlm richiede account HF con licenza Gemma accettata:
+# The .litertlm requires an HF account with the Gemma license accepted:
 #   https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
-./scripts/prepare_model_packs.sh path/to/gemma4-e2b-it.litertlm   # → AI pack (flavor play)
-./scripts/prepare_beta_model.sh  path/to/gemma4-e2b-it.litertlm   # → assets APK (flavor beta)
+./scripts/prepare_model_packs.sh path/to/gemma4-e2b-it.litertlm   # → AI packs (play flavor)
+./scripts/prepare_beta_model.sh  path/to/gemma4-e2b-it.litertlm   # → APK assets (beta flavor)
 
-# Encoder MobileCLIP + embedding delle label (una tantum / quando cambia il vocabolario):
+# MobileCLIP encoder + label embeddings (one-off / whenever the vocabulary changes):
 python3 scripts/prepare_clip_assets.py
 ```
 
-La ridistribuzione (Play o APK ai tester) è coperta dalla [Gemma Terms of Use](https://ai.google.dev/gemma/terms) con passthrough delle condizioni; i pesi MobileCLIP sono di Apple con licenza permissiva.
+Redistribution (via Play or APKs to testers) is covered by the [Gemma Terms of Use](https://ai.google.dev/gemma/terms) with passthrough of the conditions; the MobileCLIP weights are Apple's, under a permissive license.
 
-### Backend GPU/CPU e resilienza
+### GPU/CPU backend and resilience
 
-Il runtime LiteRT-LM gira **GPU-first**. Una GPU rotta si manifesta in due modi: **hang** (chiamata nativa non interrompibile) oppure **eccezione immediata** alla prima inferenza (es. OpenCL assente, dove l'init dell'engine riesce comunque). `LlmEngineHolder` li intercetta entrambi — watchdog con timeout su job scollegato per gli hang, catch dell'eccezione per il resto — e marca la GPU rotta **in modo persistente** per quel modello: dai lanci successivi si va dritti su CPU (multi-thread) senza ripagare il tentativo. Una micro-inferenza di probe al warm-up fa scattare il fallback già all'avvio, così la prima generazione dell'utente non paga l'attesa.
+The LiteRT-LM runtime is **GPU-first**. A broken GPU shows up in two ways: a **hang** (a native call that cannot be interrupted) or an **immediate exception** on the first inference (e.g. no OpenCL, where engine init succeeds anyway). `LlmEngineHolder` catches both — a watchdog with a timeout on a detached job for the hangs, an exception catch for the rest — and marks the GPU broken **persistently** for that model: subsequent launches go straight to CPU (multi-threaded) without paying for the attempt again. A micro-inference probe at warm-up triggers the fallback at startup already, so the user's first generation does not pay the wait.
 
-La generazione ricette ritenta in silenzio (fino a 4 volte) prima di mostrare un errore, perché i modelli piccoli ogni tanto producono JSON malformato; `RecipeJsonParser` e `DetectionJsonParser` sono tolleranti per costruzione.
+Recipe generation retries silently (up to 4 times) before surfacing an error, because small models occasionally emit malformed JSON; `RecipeJsonParser` and `DetectionJsonParser` are tolerant by construction.
 
-## Build & distribuzione
+## Build & distribution
 
 ```bash
-# Tester (APK da mandare a mano):
+# Testers (APK handed out manually):
 ./gradlew assembleBetaDebug     # → app/build/outputs/apk/beta/debug/app-beta-debug.apk (~2.9GB)
 
 # Play Store:
-./gradlew bundlePlayRelease     # → AAB con AI pack
+./gradlew bundlePlayRelease     # → AAB with AI packs
 
-# Test locale della delivery Play senza store:
+# Local test of the Play delivery without the store:
 ./gradlew bundlePlayDebug
 bundletool build-apks --bundle=app/build/outputs/bundle/playDebug/app-play-debug.aab \
   --output=aipantry.apks --local-testing --overwrite
 bundletool install-apks --apks=aipantry.apks
 ```
 
-⚠️ Le build APK del flavor `play` (`assemblePlayDebug`, Run di Android Studio) **non contengono gli AI pack** del modello LLM: per sviluppare c'è il sideload `adb push gemma4-e2b-it.litertlm /data/local/tmp/llm/` (ha priorità sul modello provisionato). La detection CLIP invece funziona in ogni build (l'encoder sta negli assets comuni). Il flavor `beta` funziona completo anche da Android Studio.
+⚠️ APK builds of the `play` flavor (`assemblePlayDebug`, Android Studio Run) **do not contain the LLM AI packs**: for development there is the sideload `adb push gemma4-e2b-it.litertlm /data/local/tmp/llm/` (it takes priority over the provisioned model). CLIP detection, on the other hand, works in every build (the encoder lives in the shared assets). The `beta` flavor works in full from Android Studio too.
 
-Nota install: gli APK con modello embeddato (~2.9 GB) possono superare il timeout del verifier di sistema (`INSTALL_FAILED_VERIFICATION_FAILURE`). Su device di test: `adb shell settings put global package_verifier_user_consent -1`.
+Install note: APKs with the embedded model (~2.9 GB) can exceed the system verifier timeout (`INSTALL_FAILED_VERIFICATION_FAILURE`). On test devices: `adb shell settings put global package_verifier_user_consent -1`.
 
-## Requisiti
+## Requirements
 
-JDK 17+, Android SDK 36, AGP 8.10+. `minSdk 31`, device con camera. Detection CLIP: qualsiasi device. Detection Gemini Nano: device con AICore (Pixel 9/10, Galaxy S25/S26, …). Ricette con Gemma 4 E2B: 6+ GB di RAM, GPU consigliata. Storage: ~2.9 GB per la build beta (APK + modello ricomposto), ~2.5 GB per quella Play (i pack vengono rimossi dopo l'assemblaggio).
+JDK 17+, Android SDK 36, AGP 8.10+. `minSdk 31`, a device with a camera. CLIP detection: any device. Gemini Nano detection: devices with AICore (Pixel 9/10, Galaxy S25/S26, …). Recipes with Gemma 4 E2B: 6+ GB of RAM, GPU recommended. Storage: ~2.9 GB for the beta build (APK + reassembled model), ~2.5 GB for the Play one (the packs are removed after assembly).
 
 ## Stack
 

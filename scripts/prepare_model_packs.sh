@@ -2,14 +2,14 @@
 # Splitta il modello Gemma 4 E2B (runtime LiteRT-LM) nei 3 AI pack (Play for
 # On-device AI).
 #
-# Il .litertlm va scaricato una tantum da chi builda (richiede account HF con
-# licenza Gemma accettata):
+# Il .litertlm (gemma-4-E2B-it.litertlm, licenza Apache 2.0, nessun login HF
+# richiesto) va scaricato una tantum da chi builda:
 #   https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
 #
-# Uso: ./scripts/prepare_model_packs.sh path/to/gemma4-e2b-it.litertlm
+# Uso: ./scripts/prepare_model_packs.sh path/to/gemma-4-E2B-it.litertlm
 set -euo pipefail
 
-MODEL="${1:?Uso: $0 path/to/gemma4-e2b-it.litertlm}"
+MODEL="${1:?Uso: $0 path/to/gemma-4-E2B-it.litertlm}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PARTS=3
 
@@ -33,4 +33,4 @@ for f in "$TMP"/chunk_*; do
   i=$((i+1))
 done
 
-echo "Fatto. Ora: ./gradlew bundleRelease (o bundleDebug per il test locale con bundletool)"
+echo "Fatto. Ora: ./gradlew bundlePlayRelease (o bundlePlayDebug per il test locale con bundletool)"

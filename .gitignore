@@ -13,7 +13,9 @@ captures/
 # macOS
 .DS_Store
 
-# Keystore (mai committare chiavi)
+~$*
+
+# Keystore
 *.jks
 *.keystore
 

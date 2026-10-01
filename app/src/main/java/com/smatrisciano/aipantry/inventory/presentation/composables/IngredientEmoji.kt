@@ -51,6 +51,8 @@ fun ingredientEmoji(name: String): String {
         has("lievito di birra") -> "🥄"
         has("olio di semi", "olio di arachidi", "peanut oil") -> "🫗"
         has("ravioli cinesi") -> "🥟"
+        has("egg noodle", "noodles all'uovo") -> "🍜"
+        has("all'uovo", "egg pasta") -> "🍝"
         has("fiocchi di latte") -> "🧀"
         has("juice", "smoothie", "lemonade", "succo", "succhi", "spremuta", "frullat", "limonata",
             "centrifugat") -> "🧃"
@@ -163,16 +165,18 @@ fun ingredientEmoji(name: String): String {
             "cozz", "vongol", "ostric", "capesant", "frutti di mare", "misto mare") -> "🦪"
 
         // Carbs
-        has("spaghetti", "linguine", "tagliatelle", "bucatini", "angel hair", "noodle",
-            "ramen", "vermicelli",
-            "spaghett", "linguin", "tagliatell", "bucatin", "capellini", "capelli d'angelo",
-            "fettuccin", "pappardell", "tagliolin", "bigoli", "pici", "soba", "udon") -> "🍜"
+        has("noodle", "ramen", "soba", "udon", "spaghetti di soia", "spaghetti di riso",
+            "vermicelli di riso", "rice vermicelli") -> "🍜"
         has("pasta", "penne", "fusilli", "rigatoni", "farfalle", "macaroni", "lasagna",
             "cannelloni", "orecchiette", "trofie", "paccheri", "ditalini", "gnocchi",
             "tortellini", "cappelletti", "agnolotti", "ravioli",
             "maccheron", "lasagn", "risoni", "conchigli", "mezze maniche", "tubetti",
             "pastina", "stelline", "caserecce", "strozzapreti", "garganelli", "maltagliati",
-            "orecchiett", "tortellin", "cappellett", "agnolott", "raviol", "gnocch") -> "🍝"
+            "orecchiett", "tortellin", "cappellett", "agnolott", "raviol", "gnocch",
+            "spaghett", "linguin", "tagliatell", "bucatin", "vermicell", "capellini",
+            "capelli d'angelo", "angel hair", "fettuccin", "pappardell", "tagliolin",
+            "bigoli", "pici", "bavett", "trenett", "tonnarell", "scialatiell", "mafald",
+            "reginett", "ziti") -> "🍝"
         has("rice", "risotto", "paella", "riso", "carnaroli", "arborio", "basmati") -> "🍚"
         has("bread", "baguette", "ciabatta", "focaccia", "sourdough", "brioche", "bun", "bagel",
             "muffin", "crumpet", "scone", "toast", "pita", "naan", "piadina", "carasau",

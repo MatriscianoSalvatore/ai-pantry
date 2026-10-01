@@ -42,6 +42,8 @@
     <string name="detection_engine">Engine: %1$s · 100%% on-device</string>
     <string name="scan_another">Scan another</string>
     <string name="add_to_pantry_count">Add to pantry (%1$d)</string>
+    <string name="add_to_fridge_count">Add to fridge (%1$d)</string>
+    <string name="add_to_fridge_and_pantry_count">Add to fridge and pantry (%1$d)</string>
     <string name="camera_permission_rationale">Camera access is needed to scan your fridge and pantry.\nPhotos never leave your device.</string>
     <string name="grant_camera_access">Grant camera access</string>
     <string name="error_no_ingredients">No ingredients recognized in this photo. Try a closer shot of a single ingredient.</string>
@@ -72,4 +74,29 @@
     <string name="writing_instructions">Writing the instructions on-device…</string>
     <string name="instructions_failed">Couldn\'t generate the instructions</string>
     <string name="variants">Variants</string>
+    <!-- Shown in rotation while Gemma generates, to make the wait feel shorter -->
+    <string-array name="cooking_wait_phrases">
+        <item>🔪 Chopping the vegetables…</item>
+        <item>🍕 Kneading the pizza dough…</item>
+        <item>🧂 Salting the pasta water…</item>
+        <item>🍝 Draining the pasta…</item>
+        <item>🍚 Creaming the risotto…</item>
+        <item>🐟 Filleting the sea bream…</item>
+        <item>🍆 Frying the eggplant…</item>
+        <item>🍅 Stirring the ragù…</item>
+        <item>🧄 Browning the garlic…</item>
+        <item>🧅 Slicing the onion…</item>
+        <item>🌿 Tearing the basil…</item>
+        <item>🧀 Grating the parmesan…</item>
+        <item>🥚 Beating the eggs…</item>
+        <item>🫒 Adding a drizzle of olive oil…</item>
+        <item>🍋 Squeezing the lemon…</item>
+        <item>🥖 Toasting the bread…</item>
+        <item>🍄 Sautéing the mushrooms…</item>
+        <item>🥄 Tasting the sauce…</item>
+        <item>🔥 Preheating the oven…</item>
+        <item>🍳 Heating up the pan…</item>
+        <item>🫕 Simmering the broth…</item>
+        <item>🥗 Dressing the salad…</item>
+    </string-array>
 </resources>

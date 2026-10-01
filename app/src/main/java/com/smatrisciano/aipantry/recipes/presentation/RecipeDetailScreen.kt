@@ -35,11 +35,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.R
+import com.smatrisciano.aipantry.core.presentation.composables.WaitProgressBar
 import com.smatrisciano.aipantry.inventory.presentation.composables.ingredientEmoji
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
+import com.smatrisciano.aipantry.recipes.presentation.composables.CookingWaitPhrases
 import com.smatrisciano.aipantry.recipes.presentation.composables.DifficultyBadge
 
 @Composable
@@ -64,6 +67,8 @@ fun RecipeDetailScreenRoot(
         recipe = recipe,
         isDetailLoading = state.isDetailLoading,
         detailFailed = state.detailFailed,
+        detailExpectedMillis = state.detailExpectedMillis,
+        detailCompleted = state.detailCompleted,
         onRetryDetails = {
             viewModel.onAction(RecipesActions.Interaction.OnRecipeOpened(recipeIndex))
         },
@@ -77,6 +82,8 @@ private fun RecipeDetailScreen(
     recipe: Recipe,
     isDetailLoading: Boolean,
     detailFailed: Boolean,
+    detailExpectedMillis: Long,
+    detailCompleted: Boolean,
     onRetryDetails: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -162,6 +169,19 @@ private fun RecipeDetailScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                WaitProgressBar(
+                    expectedMillis = detailExpectedMillis,
+                    completed = detailCompleted,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                )
+                CookingWaitPhrases(
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
             }
             if (recipe.steps.isEmpty() && !isDetailLoading && detailFailed) {
                 Text(

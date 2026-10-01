@@ -8,5 +8,5 @@ import org.koin.dsl.module
 
 val recipesModule = module {
     single<RecipeGenerator> { LlmRecipeGenerator(get(), get()) }
-    viewModel { RecipesViewModel(get(), get()) }
+    viewModel { RecipesViewModel(get(), get(), get()) }
 }

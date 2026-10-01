@@ -20,5 +20,5 @@ val captureModule = module {
             fallback = ClipZeroShotIngredientDetector(androidContext())
         )
     }
-    viewModel { CaptureViewModel(get(), get()) }
+    viewModel { CaptureViewModel(get(), get(), get()) }
 }

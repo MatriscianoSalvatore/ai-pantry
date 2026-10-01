@@ -1,5 +1,6 @@
 package com.smatrisciano.aipantry.recipes.presentation
 
+import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Wait
 import com.smatrisciano.aipantry.recipes.domain.GenerationProgress
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 
@@ -13,5 +14,11 @@ data class RecipesState(
     val generationFailed: Boolean = false,
     /** On-demand generation of the opened recipe's instructions. */
     val isDetailLoading: Boolean = false,
-    val detailFailed: Boolean = false
+    val detailFailed: Boolean = false,
+    /** How long the two generation steps are expected to take, for the progress bars. */
+    val generationExpectedMillis: Long = Wait.RECIPES.defaultMillis,
+    val detailExpectedMillis: Long = Wait.RECIPE_DETAILS.defaultMillis,
+    /** The step is done: its progress bar runs to 100% before the result shows. */
+    val generationCompleted: Boolean = false,
+    val detailCompleted: Boolean = false
 )

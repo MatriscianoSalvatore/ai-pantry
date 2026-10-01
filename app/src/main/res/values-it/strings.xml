@@ -37,9 +37,11 @@
     <string name="point_at_pantry">Inquadra la dispensa e scatta</string>
     <string name="take_another_photo">Scatta un\'altra foto</string>
     <string name="ingredients_detected">Ingredienti riconosciuti</string>
-    <string name="detection_engine">Motore: %1$s · 100%% sul dispositivo</string>
+    <string name="detection_engine">Motore: %1$s · 100%% on device</string>
     <string name="scan_another">Altra scansione</string>
     <string name="add_to_pantry_count">Aggiungi alla dispensa (%1$d)</string>
+    <string name="add_to_fridge_count">Aggiungi al frigo (%1$d)</string>
+    <string name="add_to_fridge_and_pantry_count">Aggiungi a frigo e dispensa (%1$d)</string>
     <string name="camera_permission_rationale">Serve l\'accesso alla fotocamera per scansionare frigo e dispensa.\nLe foto non lasciano mai il dispositivo.</string>
     <string name="grant_camera_access">Consenti l\'accesso alla fotocamera</string>
     <string name="error_no_ingredients">Nessun ingrediente riconosciuto in questa foto. Prova con uno scatto più ravvicinato.</string>
@@ -50,7 +52,7 @@
     <string name="regenerate">Rigenera</string>
     <string name="recipe_generation_failed">Generazione delle ricette non riuscita</string>
     <string name="recipe_generation_failed_body">Il modello sul dispositivo non ha restituito ricette valide. Riprova.</string>
-    <string name="generation_engine">%1$s · 100%% sul dispositivo</string>
+    <string name="generation_engine">%1$s · 100%% on device</string>
     <string name="progress_loading_model">Caricamento di %1$s sul dispositivo…</string>
     <plurals name="progress_generating">
         <item quantity="one">Genero ricette con %d ingrediente…</item>
@@ -70,4 +72,30 @@
     <string name="writing_instructions">Genero la ricetta on device…</string>
     <string name="instructions_failed">Non è stato possibile generare la ricetta</string>
     <string name="variants">Varianti</string>
+    <!-- Shown in rotation while Gemma generates, to make the wait feel shorter -->
+    <string-array name="cooking_wait_phrases">
+        <item>🔪 Sto tagliando le verdure…</item>
+        <item>🍕 Sto impastando la pizza…</item>
+        <item>🧂 Sto salando l\'acqua…</item>
+        <item>🍝 Sto scolando la pasta…</item>
+        <item>🍚 Sto mantecando il risotto…</item>
+        <item>🐟 Sto sfilettando l\'orata…</item>
+        <item>🍆 Sto friggendo le melanzane…</item>
+        <item>🍅 Sto mescolando il ragù…</item>
+        <item>🧄 Sto soffriggendo l\'aglio…</item>
+        <item>🧅 Sto affettando la cipolla…</item>
+        <item>🌿 Sto spezzettando il basilico…</item>
+        <item>🧀 Sto grattugiando il parmigiano…</item>
+        <item>🥚 Sto sbattendo le uova…</item>
+        <item>🫒 Sto aggiungendo un filo d\'olio…</item>
+        <item>🍋 Sto spremendo il limone…</item>
+        <item>🥖 Sto tostando il pane…</item>
+        <item>🍄 Sto trifolando i funghi…</item>
+        <item>🥄 Sto assaggiando il sugo…</item>
+        <item>🔥 Sto riscaldando il forno…</item>
+        <item>🍳 Sto scaldando la padella…</item>
+        <item>🫕 Sto facendo sobbollire il brodo…</item>
+        <item>🥗 Sto condendo l\'insalata…</item>
+        <item>🌿 Sto tritando il prezzemolo…</item>
+    </string-array>
 </resources>

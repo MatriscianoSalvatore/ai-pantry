@@ -2,6 +2,7 @@ package com.smatrisciano.aipantry.core.di
 
 import androidx.room.Room
 import com.google.android.play.core.aipacks.AiPackManagerFactory
+import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.inventory.data.local.PantryDatabase
@@ -25,4 +26,5 @@ val coreModule = module {
     single { AiPackManagerFactory.getInstance(androidContext()) }
     single { LlmEngineHolder(androidContext()) }
     single { ModelRepository(androidContext(), get(), get(), get()) }
+    single { WaitTimeEstimator(androidContext()) }
 }

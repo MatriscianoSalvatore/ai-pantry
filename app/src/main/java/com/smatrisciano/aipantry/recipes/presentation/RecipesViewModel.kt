@@ -1,13 +1,18 @@
 package com.smatrisciano.aipantry.recipes.presentation
 
+import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
+import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Wait
+import com.smatrisciano.aipantry.core.presentation.composables.WAIT_COMPLETION_MILLIS
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.inventory.domain.repository.InventoryRepository
 import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.presentation.RecipesActions.Interaction
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -16,7 +21,8 @@ import kotlinx.coroutines.launch
 
 class RecipesViewModel(
     private val inventoryRepository: InventoryRepository,
-    private val recipeGenerator: RecipeGenerator
+    private val recipeGenerator: RecipeGenerator,
+    private val waitTimes: WaitTimeEstimator
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RecipesState(engineName = recipeGenerator.engineName))
@@ -37,9 +43,17 @@ class RecipesViewModel(
 
     private fun generate() {
         _uiState.update {
-            it.copy(isGenerating = true, progressLog = emptyList(), recipes = emptyList(), generationFailed = false)
+            it.copy(
+                isGenerating = true,
+                progressLog = emptyList(),
+                recipes = emptyList(),
+                generationFailed = false,
+                generationExpectedMillis = waitTimes.expectedMillis(Wait.RECIPES),
+                generationCompleted = false
+            )
         }
         viewModelScope.launch {
+            val start = SystemClock.elapsedRealtime()
             inventory = inventoryRepository.observeInventory().first()
             _uiState.update { it.copy(ingredientCount = inventory.size) }
             runCatching {
@@ -47,6 +61,9 @@ class RecipesViewModel(
                     _uiState.update { it.copy(progressLog = it.progressLog + progress) }
                 }
             }.onSuccess { recipes ->
+                waitTimes.record(Wait.RECIPES, SystemClock.elapsedRealtime() - start)
+                _uiState.update { it.copy(generationCompleted = true) }
+                delay(WAIT_COMPLETION_MILLIS)
                 _uiState.update {
                     it.copy(
                         isGenerating = false,
@@ -66,10 +83,21 @@ class RecipesViewModel(
     private fun loadDetails(index: Int) {
         val recipe = _uiState.value.recipes.getOrNull(index) ?: return
         if (recipe.steps.isNotEmpty() || _uiState.value.isDetailLoading) return
-        _uiState.update { it.copy(isDetailLoading = true, detailFailed = false) }
+        _uiState.update {
+            it.copy(
+                isDetailLoading = true,
+                detailFailed = false,
+                detailExpectedMillis = waitTimes.expectedMillis(Wait.RECIPE_DETAILS),
+                detailCompleted = false
+            )
+        }
         viewModelScope.launch {
+            val start = SystemClock.elapsedRealtime()
             runCatching { recipeGenerator.generateDetails(recipe, inventory) }
                 .onSuccess { detailed ->
+                    waitTimes.record(Wait.RECIPE_DETAILS, SystemClock.elapsedRealtime() - start)
+                    _uiState.update { it.copy(detailCompleted = true) }
+                    delay(WAIT_COMPLETION_MILLIS)
                     _uiState.update { state ->
                         state.copy(
                             isDetailLoading = false,

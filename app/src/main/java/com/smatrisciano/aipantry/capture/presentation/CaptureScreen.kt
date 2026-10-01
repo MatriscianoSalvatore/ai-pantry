@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -68,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -86,6 +88,7 @@ import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Interaction
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Navigation
+import com.smatrisciano.aipantry.core.presentation.composables.WaitProgressBar
 import com.smatrisciano.aipantry.core.presentation.utils.ObserveAsEvents
 import com.smatrisciano.aipantry.inventory.presentation.composables.ingredientEmoji
 import org.koin.androidx.compose.koinViewModel
@@ -219,6 +222,38 @@ private fun CameraContent(
         )
     }
 
+    // Dark gradients between the camera image (live preview or captured photo)
+    // and the controls on top: a lit fridge is often brighter than the white
+    // text, the progress bar and the back button
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(0.25f)
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.8f),
+                        0.55f to Color.Black.copy(alpha = 0.4f),
+                        1f to Color.Transparent
+                    )
+                )
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(0.52f)
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.5f to Color.Black.copy(alpha = 0.55f),
+                        1f to Color.Black.copy(alpha = 0.9f)
+                    )
+                )
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -319,6 +354,17 @@ private fun CameraContent(
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.bodyMedium
             )
+            if (state.isAnalyzing) {
+                Spacer(modifier = Modifier.height(12.dp))
+                WaitProgressBar(
+                    expectedMillis = state.analysisExpectedMillis,
+                    completed = state.analysisCompleted,
+                    modifier = Modifier.width(240.dp),
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = 0.3f),
+                    textColor = Color.White
+                )
+            }
         }
         Spacer(modifier = Modifier.height(24.dp))
     }
@@ -443,7 +489,18 @@ private fun DetectionResults(
                 enabled = !state.isSaving && state.accumulated.isNotEmpty(),
                 modifier = Modifier.weight(1f)
             ) {
-                Text(stringResource(R.string.add_to_pantry_count, state.accumulated.size))
+                // Named after where the ingredients come from: fridge, pantry or both
+                val targets = state.accumulatedTargets.ifEmpty { setOf(state.target) }
+                Text(
+                    stringResource(
+                        when (targets) {
+                            setOf(ScanTarget.FRIDGE) -> R.string.add_to_fridge_count
+                            setOf(ScanTarget.PANTRY) -> R.string.add_to_pantry_count
+                            else -> R.string.add_to_fridge_and_pantry_count
+                        },
+                        state.accumulated.size
+                    )
+                )
             }
         }
     }

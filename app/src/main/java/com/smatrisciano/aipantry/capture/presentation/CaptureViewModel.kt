@@ -1,17 +1,23 @@
 package com.smatrisciano.aipantry.capture.presentation
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Interaction
+import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
+import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Wait
+import com.smatrisciano.aipantry.core.presentation.composables.WAIT_COMPLETION_MILLIS
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.inventory.domain.models.IngredientSource
 import com.smatrisciano.aipantry.inventory.domain.repository.InventoryRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -24,7 +30,8 @@ sealed interface CaptureEvent {
 
 class CaptureViewModel(
     private val detector: IngredientDetector,
-    private val inventoryRepository: InventoryRepository
+    private val inventoryRepository: InventoryRepository,
+    private val waitTimes: WaitTimeEstimator
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CaptureState(engineName = detector.engineName))
@@ -54,10 +61,22 @@ class CaptureViewModel(
 
     private fun analyze(bitmap: Bitmap) {
         val target = _uiState.value.target
-        _uiState.update { it.copy(isAnalyzing = true, capturedPhoto = bitmap, error = null) }
+        _uiState.update {
+            it.copy(
+                isAnalyzing = true,
+                capturedPhoto = bitmap,
+                error = null,
+                analysisExpectedMillis = waitTimes.expectedMillis(Wait.DETECTION),
+                analysisCompleted = false
+            )
+        }
         viewModelScope.launch {
+            val start = SystemClock.elapsedRealtime()
             runCatching { detector.detect(bitmap, target) }
                 .onSuccess { detections ->
+                    waitTimes.record(Wait.DETECTION, SystemClock.elapsedRealtime() - start)
+                    _uiState.update { it.copy(analysisCompleted = true) }
+                    delay(WAIT_COMPLETION_MILLIS)
                     if (detections.isEmpty()) {
                         _uiState.update {
                             it.copy(
@@ -74,6 +93,7 @@ class CaptureViewModel(
                             isAnalyzing = false,
                             lastDetections = detections,
                             accumulated = merged,
+                            accumulatedTargets = targetsOf(merged),
                             showResults = true,
                             engineName = detector.engineName
                         )
@@ -104,9 +124,13 @@ class CaptureViewModel(
 
     private fun removeDetection(name: String) {
         _uiState.update { state ->
-            state.copy(accumulated = state.accumulated.filterNot { it.name == name })
+            val remaining = state.accumulated.filterNot { it.name == name }
+            state.copy(accumulated = remaining, accumulatedTargets = targetsOf(remaining))
         }
     }
+
+    private fun targetsOf(detections: List<DetectedIngredient>): Set<ScanTarget> =
+        detections.mapNotNull { sourceByName[it.name.lowercase()] }.toSet()
 
     private fun saveInventory() {
         val state = _uiState.value

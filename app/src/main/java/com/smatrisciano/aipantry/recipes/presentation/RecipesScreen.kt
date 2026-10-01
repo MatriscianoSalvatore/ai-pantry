@@ -41,10 +41,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.R
+import com.smatrisciano.aipantry.core.presentation.composables.WaitProgressBar
 import com.smatrisciano.aipantry.recipes.domain.GenerationProgress
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 import com.smatrisciano.aipantry.recipes.presentation.RecipesActions.Interaction
 import com.smatrisciano.aipantry.recipes.presentation.RecipesActions.Navigation
+import com.smatrisciano.aipantry.recipes.presentation.composables.CookingWaitPhrases
 import com.smatrisciano.aipantry.recipes.presentation.composables.DifficultyBadge
 
 @Composable
@@ -169,6 +171,14 @@ private fun GeneratingContent(
             color = MaterialTheme.colorScheme.primary
         )
         Spacer(modifier = Modifier.height(16.dp))
+        WaitProgressBar(
+            expectedMillis = state.generationExpectedMillis,
+            completed = state.generationCompleted,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        CookingWaitPhrases()
+        Spacer(modifier = Modifier.height(20.dp))
         state.progressLog.forEach { progress ->
             AnimatedVisibility(visible = true) {
                 Text(

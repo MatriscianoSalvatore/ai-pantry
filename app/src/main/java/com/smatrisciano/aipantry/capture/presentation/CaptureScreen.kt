@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.util.Size
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,49 +20,84 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Kitchen
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.ShoppingBasket
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Kitchen
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.ShoppingBasket
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,18 +105,44 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.R
@@ -88,7 +150,11 @@ import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Interaction
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Navigation
+import com.smatrisciano.aipantry.core.presentation.composables.CountPill
+import com.smatrisciano.aipantry.core.presentation.composables.EmojiAvatar
+import com.smatrisciano.aipantry.core.presentation.composables.EnginePill
 import com.smatrisciano.aipantry.core.presentation.composables.WaitProgressBar
+import com.smatrisciano.aipantry.core.presentation.theme.extendedColors
 import com.smatrisciano.aipantry.core.presentation.utils.ObserveAsEvents
 import com.smatrisciano.aipantry.inventory.presentation.composables.ingredientEmoji
 import org.koin.androidx.compose.koinViewModel
@@ -134,38 +200,80 @@ private fun CaptureScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasCameraPermission = granted }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        if (hasCameraPermission) {
-            CameraContent(state = state, onAction = onAction)
-        } else {
-            PermissionRequest(onRequest = { permissionLauncher.launch(Manifest.permission.CAMERA) })
-        }
+    LightSystemBarIcons()
 
-        IconButton(
-            onClick = { onAction(Navigation.GoBack) },
+    // The camera is dark in both themes: white is the default content (and ripple) colour here
+    CompositionLocalProvider(LocalContentColor provides Color.White) {
+        Box(
             modifier = Modifier
-                .padding(WindowInsets.statusBars.asPaddingValues())
-                .padding(8.dp)
+                .fillMaxSize()
+                .background(Color.Black)
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(R.string.back),
-                tint = Color.White
-            )
-        }
+            if (hasCameraPermission) {
+                CameraContent(state = state, onAction = onAction)
+            } else {
+                PermissionRequest(
+                    onRequest = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                    onClose = { onAction(Navigation.GoBack) }
+                )
+            }
 
-        if (state.showResults) {
-            ModalBottomSheet(
-                onDismissRequest = { onAction(Interaction.OnResultsDismissed) },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            ) {
-                DetectionResults(state = state, onAction = onAction)
+            if (state.showResults) {
+                ModalBottomSheet(
+                    onDismissRequest = { onAction(Interaction.OnResultsDismissed) },
+                    // Outside the sheet's surface and anchors: a short sheet stays at the bottom,
+                    // a long scan stops below the status bar instead of running under it
+                    modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    containerColor = MaterialTheme.colorScheme.background
+                ) {
+                    LightStatusBarIconsInSheet()
+                    DetectionResults(state = state, onAction = onAction)
+                }
             }
         }
+    }
+}
+
+/**
+ * The camera is always dark, whatever the app theme: light system bar icons while it is
+ * shown, then the app's own appearance again.
+ *
+ * Tied to the destination being resumed, not to composition: the icons go back as soon as the
+ * pop starts rather than after the exit animation, and they go back to the theme's value, not to
+ * a captured one that a second camera instance (Scan tapped again mid-exit) could have changed.
+ */
+@Composable
+private fun LightSystemBarIcons() {
+    val window = LocalActivity.current?.window ?: return
+    val view = LocalView.current
+    val darkTheme = isSystemInDarkTheme()
+    LifecycleResumeEffect(window, view, darkTheme) {
+        val controller = WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = false
+        // The 3-button bar and the gesture handle sit on the dark bottom scrim too
+        controller.isAppearanceLightNavigationBars = false
+        onPauseOrDispose {
+            // What enableEdgeToEdge sets from the system theme, which the app theme follows
+            controller.isAppearanceLightStatusBars = !darkTheme
+            controller.isAppearanceLightNavigationBars = !darkTheme
+        }
+    }
+}
+
+/**
+ * The results sheet runs in its own window, and Material gives it dark status bar icons in the
+ * light theme: over the dimmed camera they would all but vanish. Light ones there too; the
+ * navigation bar keeps Material's choice, as it sits on the light sheet.
+ */
+@Composable
+private fun LightStatusBarIconsInSheet() {
+    val sheetWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+    DisposableEffect(sheetWindow) {
+        sheetWindow?.let { window ->
+            WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = false
+        }
+        onDispose {}
     }
 }
 
@@ -188,6 +296,15 @@ private fun CameraContent(
                     .build()
             )
             .build()
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri?.let {
+            decodeGalleryImage(context, it)?.let { bitmap ->
+                onAction(Interaction.OnPhotoCaptured(bitmap))
+            }
+        }
     }
 
     AndroidView(
@@ -222,9 +339,54 @@ private fun CameraContent(
         )
     }
 
-    // Dark gradients between the camera image (live preview or captured photo)
-    // and the controls on top: a lit fridge is often brighter than the white
-    // text, the progress bar and the back button
+    CameraScrims()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        CaptureTopBar(onClose = { onAction(Navigation.GoBack) }) {
+            TargetSelector(
+                selected = state.target,
+                onSelect = { onAction(Interaction.OnTargetSelected(it)) }
+            )
+        }
+
+        Viewfinder(
+            isAnalyzing = state.isAnalyzing,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp, vertical = 16.dp)
+        )
+
+        BottomControls(
+            state = state,
+            onAction = onAction,
+            onShutterClick = {
+                takePhoto(context, imageCapture) { bitmap ->
+                    onAction(Interaction.OnPhotoCaptured(bitmap))
+                }
+            },
+            onGalleryClick = {
+                galleryLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
+                // Same room in every state: the viewfinder above doesn't jump when
+                // the shutter gives way to the progress card
+                .heightIn(min = ControlsMinHeight)
+        )
+    }
+}
+
+/**
+ * Dark gradients between the camera image (live preview or captured photo) and the
+ * controls on top: a lit fridge is often brighter than the white text and buttons.
+ */
+@Composable
+private fun CameraScrims() {
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -253,121 +415,338 @@ private fun CameraContent(
                 )
         )
     }
+}
 
-    Column(
+/** Close on the left, an optional centred control, and a matching blank on the right. */
+@Composable
+private fun CaptureTopBar(
+    onClose: () -> Unit,
+    center: @Composable () -> Unit = {}
+) {
+    Row(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(WindowInsets.navigationBars.asPaddingValues()),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
+            // 2dp less than the 16/8 margins: the close circle sits 2dp inside its 48dp target
+            .padding(start = 14.dp, end = 14.dp, top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Spacer(modifier = Modifier.padding(WindowInsets.statusBars.asPaddingValues()))
-        Spacer(modifier = Modifier.height(56.dp))
-
-        TargetSelector(
-            selected = state.target,
-            onSelect = { onAction(Interaction.OnTargetSelected(it)) }
+        GlassCircleButton(
+            icon = Icons.Rounded.Close,
+            contentDescription = stringResource(R.string.close),
+            onClick = onClose
         )
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        if (state.accumulated.isNotEmpty()) {
-            // Tappable: it is how to reopen the results sheet after closing it
-            Surface(
-                onClick = { onAction(Interaction.OnShowResultsClick) },
-                shape = RoundedCornerShape(20.dp),
-                color = Color.Black.copy(alpha = 0.6f)
-            ) {
-                Text(
-                    text = pluralStringResource(
-                        R.plurals.scan_session_count,
-                        state.accumulated.size,
-                        state.accumulated.size
-                    ),
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            center()
         }
+        // Mirrors the close button's touch target, so the centre control sits at the true centre
+        Spacer(modifier = Modifier.size(MinTouchTarget))
+    }
+}
 
-        if (state.error != null) {
-            DetectionError(
-                message = stringResource(
-                    when (state.error) {
-                        CaptureError.NO_INGREDIENTS -> R.string.error_no_ingredients
-                        CaptureError.DETECTION_FAILED -> R.string.error_detection_failed
-                    }
-                ),
-                onRetry = { onAction(Interaction.OnRetryClick) }
-            )
-        } else {
-            val galleryLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.PickVisualMedia()
-            ) { uri ->
-                uri?.let {
-                    decodeGalleryImage(context, it)?.let { bitmap ->
-                        onAction(Interaction.OnPhotoCaptured(bitmap))
-                    }
-                }
-            }
+/** Icon button on a translucent dark circle: reads on any camera image. */
+@Composable
+private fun GlassCircleButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = TopButtonSize,
+    enabled: Boolean = true
+) {
+    Box(
+        modifier = modifier
+            // A 44dp circle still gets a 48dp touch target
+            .minimumInteractiveComponentSize()
+            .size(size)
+            .clip(CircleShape)
+            .background(GlassColor)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = Color.White,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Symmetric placeholder to keep the shutter centred
-                Spacer(modifier = Modifier.size(48.dp))
-                Spacer(modifier = Modifier.width(28.dp))
-                ShutterButton(
-                    isAnalyzing = state.isAnalyzing,
-                    onClick = {
-                        takePhoto(context, imageCapture) { bitmap ->
-                            onAction(Interaction.OnPhotoCaptured(bitmap))
+/** Fridge / pantry switch: a segmented control on glass, the selected half solid white. */
+@Composable
+private fun TargetSelector(
+    selected: ScanTarget,
+    onSelect: (ScanTarget) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(GlassColor)
+            .padding(4.dp)
+            .selectableGroup(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TargetSegment(
+            icon = Icons.Rounded.Kitchen,
+            label = stringResource(R.string.fridge),
+            selected = selected == ScanTarget.FRIDGE,
+            onClick = { onSelect(ScanTarget.FRIDGE) }
+        )
+        TargetSegment(
+            icon = Icons.Rounded.ShoppingBasket,
+            label = stringResource(R.string.pantry),
+            selected = selected == ScanTarget.PANTRY,
+            onClick = { onSelect(ScanTarget.PANTRY) }
+        )
+    }
+}
+
+@Composable
+private fun TargetSegment(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    // Fades to a transparent white, not to transparent black: no grey midway
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) Color.White else Color.White.copy(alpha = 0f),
+        label = "segmentContainer"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) InkColor else Color.White.copy(alpha = 0.85f),
+        label = "segmentContent"
+    )
+    Row(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(containerColor)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = contentColor,
+            maxLines = 1
+        )
+    }
+}
+
+/**
+ * Corner brackets framing the shot. While the model looks at the photo they take the AI
+ * accent and a soft scan line sweeps through the frame: the "AI is looking" moment.
+ */
+@Composable
+private fun Viewfinder(
+    isAnalyzing: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val accent = MaterialTheme.extendedColors.aiGradient[1]
+    // Read only while drawing: the colour animation redraws without recomposing
+    val bracketColor = animateColorAsState(
+        targetValue = if (isAnalyzing) accent else Color.White.copy(alpha = 0.9f),
+        animationSpec = tween(400),
+        label = "bracketColor"
+    )
+
+    Box(modifier = modifier) {
+        AnimatedVisibility(
+            visible = isAnalyzing,
+            enter = fadeIn(tween(400)),
+            exit = fadeOut(tween(250)),
+            modifier = Modifier.matchParentSize()
+        ) {
+            ScanLine(color = accent, modifier = Modifier.fillMaxSize())
+        }
+        Spacer(
+            modifier = Modifier
+                .matchParentSize()
+                .drawWithCache {
+                    val stroke = BracketStroke.toPx()
+                    val arm = BracketArm.toPx()
+                    val radius = BracketRadius.toPx()
+                    val inset = stroke / 2
+                    // Top-left corner only: the other three are its mirror images
+                    val corner = Path().apply {
+                        moveTo(inset, inset + arm)
+                        lineTo(inset, inset + radius)
+                        arcTo(
+                            rect = Rect(inset, inset, inset + 2 * radius, inset + 2 * radius),
+                            startAngleDegrees = 180f,
+                            sweepAngleDegrees = 90f,
+                            forceMoveTo = false
+                        )
+                        lineTo(inset + arm, inset)
+                    }
+                    val style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    onDrawBehind {
+                        for (scaleX in MIRRORS) {
+                            for (scaleY in MIRRORS) {
+                                scale(scaleX, scaleY, pivot = center) {
+                                    drawPath(corner, bracketColor.value, style = style)
+                                }
+                            }
                         }
                     }
-                )
-                Spacer(modifier = Modifier.width(28.dp))
-                IconButton(
-                    onClick = {
-                        galleryLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                }
+        )
+    }
+}
+
+/** A thin bright line with a soft glow band, sweeping up and down while the model works. */
+@Composable
+private fun ScanLine(
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val transition = rememberInfiniteTransition(label = "scanLine")
+    val progress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(SCAN_SWEEP_MILLIS, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scanProgress"
+    )
+    val lineColor = lerp(color, Color.White, 0.55f)
+
+    Canvas(
+        modifier = modifier
+            .clipToBounds()
+            // Offscreen, so the side fade below masks only the line and its glow
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    ) {
+        val y = size.height * (0.04f + 0.92f * progress)
+        val glow = ScanGlowHeight.toPx()
+        drawRect(
+            brush = Brush.verticalGradient(
+                0f to Color.Transparent,
+                0.5f to color.copy(alpha = 0.35f),
+                1f to Color.Transparent,
+                startY = y - glow / 2,
+                endY = y + glow / 2
+            )
+        )
+        drawLine(
+            color = lineColor,
+            start = Offset(0f, y),
+            end = Offset(size.width, y),
+            strokeWidth = ScanLineStroke.toPx()
+        )
+        // Fade both ends: the sweep reads as light, not as a hard-edged bar
+        drawRect(
+            brush = Brush.horizontalGradient(
+                0f to Color.Transparent,
+                0.2f to Color.Black,
+                0.8f to Color.Black,
+                1f to Color.Transparent
+            ),
+            blendMode = BlendMode.DstIn
+        )
+    }
+}
+
+/** What the bottom of the camera shows; drives the cross-fade between the three. */
+private sealed interface ControlsMode {
+    data class Error(val error: CaptureError) : ControlsMode
+    data object Analyzing : ControlsMode
+    data object Idle : ControlsMode
+}
+
+@Composable
+private fun BottomControls(
+    state: CaptureState,
+    onAction: (CaptureActions) -> Unit,
+    onShutterClick: () -> Unit,
+    onGalleryClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val error = state.error
+    val mode = when {
+        error != null -> ControlsMode.Error(error)
+        state.isAnalyzing -> ControlsMode.Analyzing
+        else -> ControlsMode.Idle
+    }
+
+    AnimatedContent(
+        targetState = mode,
+        modifier = modifier,
+        contentAlignment = Alignment.BottomCenter,
+        transitionSpec = {
+            (fadeIn(tween(220, delayMillis = 60)) +
+                slideInVertically(tween(220, delayMillis = 60)) { it / 8 })
+                .togetherWith(fadeOut(tween(120)))
+                .using(SizeTransform(clip = false))
+        },
+        label = "captureControls"
+    ) { target ->
+        // AnimatedContent passes its minimum height down: without this Box the cards
+        // would stretch to fill it instead of sitting at the bottom
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+            when (target) {
+                is ControlsMode.Error -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // A failed shot must not hide what earlier shots found, nor the way to add it
+                    if (state.accumulated.isNotEmpty()) {
+                        ReviewPill(
+                            count = state.accumulated.size,
+                            onClick = { onAction(Interaction.OnShowResultsClick) }
                         )
-                    },
-                    enabled = !state.isAnalyzing,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PhotoLibrary,
-                        contentDescription = stringResource(R.string.pick_from_gallery),
-                        tint = Color.White
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    DetectionError(
+                        message = stringResource(
+                            when (target.error) {
+                                CaptureError.NO_INGREDIENTS -> R.string.error_no_ingredients
+                                CaptureError.DETECTION_FAILED -> R.string.error_detection_failed
+                            }
+                        ),
+                        onRetry = { onAction(Interaction.OnRetryClick) }
                     )
                 }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = stringResource(
-                    when {
-                        state.isAnalyzing -> R.string.detecting_ingredients
-                        state.target == ScanTarget.FRIDGE -> R.string.point_at_fridge
-                        else -> R.string.point_at_pantry
-                    }
-                ),
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            if (state.isAnalyzing) {
-                Spacer(modifier = Modifier.height(12.dp))
-                WaitProgressBar(
+
+                ControlsMode.Analyzing -> AnalyzingCard(
                     expectedMillis = state.analysisExpectedMillis,
-                    completed = state.analysisCompleted,
-                    modifier = Modifier.width(240.dp),
-                    color = Color.White,
-                    trackColor = Color.White.copy(alpha = 0.3f),
-                    textColor = Color.White
+                    completed = state.analysisCompleted
+                )
+
+                ControlsMode.Idle -> IdleControls(
+                    accumulatedCount = state.accumulated.size,
+                    target = state.target,
+                    // Off as soon as the analysis starts, even while this fades out: a second
+                    // shot must not start a second analysis
+                    enabled = mode == ControlsMode.Idle,
+                    onReviewClick = { onAction(Interaction.OnShowResultsClick) },
+                    onShutterClick = onShutterClick,
+                    onGalleryClick = onGalleryClick
                 )
             }
         }
-        Spacer(modifier = Modifier.height(24.dp))
     }
+}
+
+/** Translucent dark card for the messages over the camera image. */
+@Composable
+private fun GlassCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(GlassCardShape)
+            .background(Color.Black.copy(alpha = 0.55f))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), GlassCardShape)
+            .padding(20.dp),
+        content = content
+    )
 }
 
 @Composable
@@ -375,69 +754,247 @@ private fun DetectionError(
     message: String,
     onRetry: () -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = Color.Black.copy(alpha = 0.6f)
-        ) {
-            Text(
-                text = message,
+    GlassCard {
+        Text(
+            text = message,
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        WhiteButton(
+            text = stringResource(R.string.take_another_photo),
+            onClick = onRetry,
+            minHeight = 52.dp
+        )
+    }
+}
+
+@Composable
+private fun AnalyzingCard(
+    expectedMillis: Long,
+    completed: Boolean
+) {
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
                 color = Color.White,
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                strokeWidth = 2.dp,
+                trackColor = Color.White.copy(alpha = 0.2f)
             )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = stringResource(R.string.analyzing_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.White
+                )
+                Text(
+                    text = stringResource(R.string.analyzing_caption),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.7f)
+                )
+            }
         }
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onRetry) {
-            Text(stringResource(R.string.take_another_photo))
+        WaitProgressBar(
+            expectedMillis = expectedMillis,
+            completed = completed,
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White,
+            trackColor = Color.White.copy(alpha = 0.25f),
+            textColor = Color.White
+        )
+    }
+}
+
+/** Above the shutter: the way back to the results, or a hint on what to frame. */
+private sealed interface ScanPill {
+    data class Review(val count: Int) : ScanPill
+    data class Hint(val target: ScanTarget) : ScanPill
+}
+
+@Composable
+private fun IdleControls(
+    accumulatedCount: Int,
+    target: ScanTarget,
+    enabled: Boolean,
+    onReviewClick: () -> Unit,
+    onShutterClick: () -> Unit,
+    onGalleryClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        val targetPill =
+            if (accumulatedCount > 0) ScanPill.Review(accumulatedCount) else ScanPill.Hint(target)
+        AnimatedContent(
+            targetState = targetPill,
+            // A new count updates the pill in place; only switching pill (or hint) cross-fades
+            contentKey = { pill -> if (pill is ScanPill.Review) ScanPill.Review::class else pill },
+            transitionSpec = { fadeIn(tween(200)).togetherWith(fadeOut(tween(120))) },
+            contentAlignment = Alignment.Center,
+            label = "scanPill"
+        ) { pill ->
+            when (pill) {
+                is ScanPill.Review -> ReviewPill(count = pill.count, onClick = onReviewClick)
+                is ScanPill.Hint -> HintPill(target = pill.target)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                GlassCircleButton(
+                    icon = Icons.Rounded.PhotoLibrary,
+                    contentDescription = stringResource(R.string.pick_from_gallery),
+                    onClick = onGalleryClick,
+                    size = 52.dp,
+                    enabled = enabled
+                )
+            }
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                ShutterButton(onClick = onShutterClick, enabled = enabled)
+            }
+            // Empty third slot: keeps the shutter at the centre of the screen
+            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }
 
+/** Tappable: it is how to reopen the results sheet after closing it. */
 @Composable
-private fun TargetSelector(
-    selected: ScanTarget,
-    onSelect: (ScanTarget) -> Unit
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        FilterChip(
-            selected = selected == ScanTarget.FRIDGE,
-            onClick = { onSelect(ScanTarget.FRIDGE) },
-            label = { Text(stringResource(R.string.fridge)) },
-            leadingIcon = { Icon(Icons.Default.Kitchen, contentDescription = null) }
-        )
-        FilterChip(
-            selected = selected == ScanTarget.PANTRY,
-            onClick = { onSelect(ScanTarget.PANTRY) },
-            label = { Text(stringResource(R.string.pantry)) },
-            leadingIcon = { Icon(Icons.Default.ShoppingBasket, contentDescription = null) }
-        )
-    }
-}
-
-@Composable
-private fun ShutterButton(
-    isAnalyzing: Boolean,
+private fun ReviewPill(
+    count: Int,
     onClick: () -> Unit
 ) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = Color.White,
+        contentColor = InkColor
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = primaryOnWhite(),
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = pluralStringResource(R.plurals.review_scan, count, count),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = InkColor.copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HintPill(target: ScanTarget) {
+    Text(
+        text = stringResource(
+            if (target == ScanTarget.FRIDGE) R.string.point_at_fridge else R.string.point_at_pantry
+        ),
+        style = MaterialTheme.typography.labelLarge,
+        color = Color.White,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.4f))
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    )
+}
+
+/**
+ * Brand green that reads on a white pill in both themes: the dark scheme's primary is a
+ * pastel made for dark surfaces, its inversePrimary the deep green made for light ones.
+ */
+@Composable
+private fun primaryOnWhite(): Color = with(MaterialTheme.colorScheme) {
+    if (background.luminance() < 0.5f) inversePrimary else primary
+}
+
+/** White ring and disc; the disc sinks a little while pressed, like a physical shutter. */
+@Composable
+private fun ShutterButton(
+    onClick: () -> Unit,
+    enabled: Boolean
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val discScale by animateFloatAsState(
+        targetValue = if (pressed) 0.9f else 1f,
+        label = "shutterScale"
+    )
+    val description = stringResource(R.string.scan)
+
     Box(
         modifier = Modifier
-            .size(76.dp)
+            .size(80.dp)
+            .border(4.dp, Color.White, CircleShape)
             .clip(CircleShape)
-            .border(4.dp, Color.White, CircleShape),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick
+            )
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
-        if (isAnalyzing) {
-            CircularProgressIndicator(color = Color.White)
-        } else {
-            Surface(
-                onClick = onClick,
-                shape = CircleShape,
-                color = Color.White,
-                modifier = Modifier.size(60.dp)
-            ) {}
-        }
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .graphicsLayer {
+                    scaleX = discScale
+                    scaleY = discScale
+                }
+                .background(Color.White, CircleShape)
+        )
+    }
+}
+
+/** Solid white call to action for the dark camera screen. */
+@Composable
+private fun WhiteButton(
+    text: String,
+    onClick: () -> Unit,
+    minHeight: Dp
+) {
+    Button(
+        onClick = onClick,
+        shape = CircleShape,
+        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = InkColor),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = minHeight)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleSmall,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -446,136 +1003,280 @@ private fun DetectionResults(
     state: CaptureState,
     onAction: (CaptureActions) -> Unit
 ) {
+    val count = state.accumulated.size
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 24.dp)
+            .padding(horizontal = 20.dp)
+            // The sheet already pads its content by the navigation bar
+            .padding(top = 4.dp, bottom = 16.dp)
     ) {
         Text(
-            text = stringResource(R.string.ingredients_detected),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+            text = pluralStringResource(R.plurals.ingredients_found, count, count),
+            style = MaterialTheme.typography.headlineSmall
         )
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = stringResource(R.string.detection_engine, state.engineName),
-            style = MaterialTheme.typography.bodySmall,
+            text = stringResource(R.string.results_subtitle),
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Spacer(modifier = Modifier.height(12.dp))
+        EnginePill(engineName = state.engineName)
         Spacer(modifier = Modifier.height(16.dp))
 
-        LazyColumn(
-            modifier = Modifier.weight(1f, fill = false),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(state.accumulated, key = { it.name }) { detection ->
+        LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
+            itemsIndexed(state.accumulated, key = { _, detection -> detection.name }) { index, detection ->
                 DetectionRow(
                     detection = detection,
-                    onRemove = { onAction(Interaction.OnDetectionRemoved(detection.name)) }
+                    shape = groupedRowShape(index, count),
+                    showDivider = index > 0,
+                    onRemove = { onAction(Interaction.OnDetectionRemoved(detection.name)) },
+                    modifier = Modifier.animateItem()
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(
-                onClick = { onAction(Interaction.OnScanAnotherClick) },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(stringResource(R.string.scan_another))
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { onAction(Interaction.OnAddToPantryClick) },
                 enabled = !state.isSaving && state.accumulated.isNotEmpty(),
-                modifier = Modifier.weight(1f)
+                shape = CircleShape,
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
             ) {
                 // Named after where the ingredients come from: fridge, pantry or both
                 val targets = state.accumulatedTargets.ifEmpty { setOf(state.target) }
+                Icon(
+                    imageVector = Icons.Rounded.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    stringResource(
+                    text = stringResource(
                         when (targets) {
-                            setOf(ScanTarget.FRIDGE) -> R.string.add_to_fridge_count
-                            setOf(ScanTarget.PANTRY) -> R.string.add_to_pantry_count
-                            else -> R.string.add_to_fridge_and_pantry_count
-                        },
-                        state.accumulated.size
-                    )
+                            setOf(ScanTarget.FRIDGE) -> R.string.add_to_fridge
+                            setOf(ScanTarget.PANTRY) -> R.string.add_to_pantry
+                            else -> R.string.add_to_fridge_and_pantry
+                        }
+                    ),
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // Shrinks before the count pill does
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                CountPill(count = count)
+            }
+            OutlinedButton(
+                onClick = { onAction(Interaction.OnScanAnotherClick) },
+                shape = CircleShape,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PhotoCamera,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.scan_another),
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
     }
+}
+
+/** Grouped list: only the outer corners of the block are rounded. */
+private fun groupedRowShape(index: Int, count: Int): Shape = when {
+    count == 1 -> RoundedCornerShape(GroupedRadius)
+    index == 0 -> RoundedCornerShape(topStart = GroupedRadius, topEnd = GroupedRadius)
+    index == count - 1 -> RoundedCornerShape(bottomStart = GroupedRadius, bottomEnd = GroupedRadius)
+    else -> RectangleShape
 }
 
 @Composable
 private fun DetectionRow(
     detection: DetectedIngredient,
-    onRemove: () -> Unit
+    shape: Shape,
+    showDivider: Boolean,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.extendedColors.card)
     ) {
+        if (showDivider) {
+            // Starts after the avatar, as in a settings list
+            HorizontalDivider(
+                modifier = Modifier.padding(start = RowDividerInset),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                // Tight end padding: the 48dp remove target lines the X up with the margin
+                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val emoji = remember(detection.name) { ingredientEmoji(detection.name) }
+            EmojiAvatar(emoji = emoji, size = 40.dp)
+            Spacer(modifier = Modifier.width(14.dp))
             Text(
-                text = ingredientEmoji(detection.name),
-                style = MaterialTheme.typography.headlineSmall
+                text = detection.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = detection.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    LinearProgressIndicator(
-                        progress = { detection.confidence },
-                        modifier = Modifier.width(96.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "${(detection.confidence * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            Spacer(modifier = Modifier.width(8.dp))
+            ConfidencePill(confidence = detection.confidence)
             IconButton(onClick = onRemove) {
                 Icon(
-                    Icons.Default.Close,
-                    contentDescription = stringResource(R.string.remove_ingredient, detection.name)
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.remove_ingredient, detection.name),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
     }
 }
 
+/** Detection confidence, coloured by how much to trust it. */
 @Composable
-private fun PermissionRequest(onRequest: () -> Unit) {
-    Column(
+private fun ConfidencePill(confidence: Float) {
+    val extended = MaterialTheme.extendedColors
+    val scheme = MaterialTheme.colorScheme
+    val (contentColor, containerColor) = when {
+        confidence >= 0.7f -> extended.success to extended.success.copy(alpha = 0.12f)
+        confidence >= 0.4f -> extended.warning to extended.warning.copy(alpha = 0.14f)
+        else -> scheme.onSurfaceVariant to scheme.surfaceContainerHigh
+    }
+    Text(
+        text = "${(confidence * 100).toInt()}%",
+        // Tabular digits: the pills line up down the list
+        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+        color = contentColor,
         modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = stringResource(R.string.camera_permission_rationale),
-            color = Color.White,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyLarge
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = onRequest) {
-            Text(stringResource(R.string.grant_camera_access))
+            .background(containerColor, CircleShape)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    )
+}
+
+@Composable
+private fun PermissionRequest(
+    onRequest: () -> Unit,
+    onClose: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.systemBars)
+                .padding(horizontal = 24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(88.dp)
+                    .background(Color.White.copy(alpha = 0.12f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PhotoCamera,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = stringResource(R.string.camera_permission_title),
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.camera_permission_rationale),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.75f),
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(28.dp))
+            WhiteButton(
+                text = stringResource(R.string.grant_camera_access),
+                onClick = onRequest,
+                minHeight = 56.dp
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Rounded.Lock,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = stringResource(R.string.private_on_device),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
         }
+
+        CaptureTopBar(onClose = onClose)
     }
 }
+
+// Translucent black: controls stay legible on any camera image
+private val GlassColor = Color.Black.copy(alpha = 0.35f)
+
+// Near-black content on the white controls
+private val InkColor = Color(0xFF111813)
+
+private val GlassCardShape = RoundedCornerShape(24.dp)
+private val TopButtonSize = 44.dp
+private val MinTouchTarget = 48.dp
+
+// Hint pill (40) + gap (20) + shutter (80)
+private val ControlsMinHeight = 140.dp
+
+private val GroupedRadius = 20.dp
+
+// Row start padding (16) + avatar (40) + gap (14)
+private val RowDividerInset = 70.dp
+
+private val BracketStroke = 3.dp
+private val BracketArm = 30.dp
+private val BracketRadius = 18.dp
+private val MIRRORS = floatArrayOf(1f, -1f)
+
+private val ScanGlowHeight = 90.dp
+private val ScanLineStroke = 2.dp
+private const val SCAN_SWEEP_MILLIS = 1800
 
 private fun takePhoto(
     context: Context,

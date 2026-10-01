@@ -1,6 +1,7 @@
 package com.smatrisciano.aipantry.inventory.presentation.composables
 
 import java.text.Normalizer
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Emoji for an ingredient: keyword match on the name, from the most specific
@@ -9,25 +10,25 @@ import java.text.Normalizer
  *
  * English and Italian keys in the same group: names arrive in the device
  * language (detectors, Gemma's recipes) and the inventory can mix them.
+ *
+ * Remembered by name: lists ask for the same few names again and again, often
+ * while they compose (a lazy row scrolled back into view recomputes it).
  */
-fun ingredientEmoji(name: String): String {
-    // No accents and a straight apostrophe: "tè", "caffè", "d’oliva" become
-    // "te", "caffe", "d'oliva", so the keys stay ASCII (\b doesn't treat
-    // accented letters as letters on every runtime)
-    val n = Normalizer.normalize(name.lowercase(), Normalizer.Form.NFD)
-        .replace(Regex("\\p{Mn}+"), "")
-        .replace('’', '\'')
+fun ingredientEmoji(name: String): String =
+    emojiByName[name] ?: matchIngredientEmoji(name).also { emoji ->
+        if (emojiByName.size >= MAX_REMEMBERED_NAMES) emojiByName.clear()
+        emojiByName[name] = emoji
+    }
+
+private fun matchIngredientEmoji(name: String): String {
+    val n = normalizeForKeywords(name)
 
     // Word-boundary match: "ham" must NOT match "cHAMpagne"
-    fun has(vararg keys: String) = keys.any { key ->
-        Regex("\\b${Regex.escape(key)}").containsMatchIn(n)
-    }
+    fun has(vararg keys: String) = containsKeyword(n, keys, wholeWord = false)
 
     // Whole word, for short keys that are a prefix of something else:
     // "mela" is not "melanzane", "pepe" is not "peperoni", "pane" is not "panettone"
-    fun word(vararg keys: String) = keys.any { key ->
-        Regex("\\b${Regex.escape(key)}\\b").containsMatchIn(n)
-    }
+    fun word(vararg keys: String) = containsKeyword(n, keys, wholeWord = true)
 
     return when {
         // Specific before families: "strawberry jam" is 🫙, not 🍓,
@@ -253,3 +254,38 @@ fun ingredientEmoji(name: String): String {
         else -> "🍽️"
     }
 }
+
+/**
+ * Lowercase, no accents and a straight apostrophe: "tè", "caffè", "d’oliva"
+ * become "te", "caffe", "d'oliva", so the keys stay ASCII (\b doesn't treat
+ * accented letters as letters on every runtime).
+ */
+internal fun normalizeForKeywords(text: String): String =
+    Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD)
+        .replace(COMBINING_MARKS, "")
+        .replace('’', '\'')
+
+/**
+ * True if one of [keys] starts a word of [text] (`\bkey`), or with [wholeWord]
+ * is a whole word of it (`\bkey\b`). The keys of each call site are compiled
+ * once into a single alternation and cached, so a lookup stays cheap even
+ * while lists compose.
+ */
+internal fun containsKeyword(text: String, keys: Array<out String>, wholeWord: Boolean): Boolean {
+    val cacheKey = keys.joinToString(separator = "\u0000", prefix = if (wholeWord) "w\u0000" else "p\u0000")
+    val pattern = keywordPatterns.getOrPut(cacheKey) {
+        val alternation = keys.joinToString("|") { Regex.escape(it) }
+        Regex(if (wholeWord) "\\b(?:$alternation)\\b" else "\\b(?:$alternation)")
+    }
+    return pattern.containsMatchIn(text)
+}
+
+private val COMBINING_MARKS = Regex("\\p{Mn}+")
+
+/** One pattern per call site of has()/word(), here and in the dish matcher. */
+private val keywordPatterns = ConcurrentHashMap<String, Regex>()
+
+private val emojiByName = ConcurrentHashMap<String, String>()
+
+// Far more than a kitchen holds: only a guard against unbounded growth
+private const val MAX_REMEMBERED_NAMES = 512

@@ -25,6 +25,7 @@ class InventoryViewModel(
         val activeModel = LlmCatalog.default
         val status = statuses[activeModel.id]
         InventoryState(
+            isLoaded = true,
             fridgeItems = ingredients.filter { it.source == IngredientSource.FRIDGE },
             pantryItems = ingredients.filter { it.source != IngredientSource.FRIDGE },
             aiStatus = when (status) {

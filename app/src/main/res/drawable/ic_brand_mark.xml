@@ -1,0 +1,30 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <!-- The launcher glyph (steaming pot + AI sparkle) cropped to its own bounds,
+         for the in-app brand mark. Same paths as ic_launcher_foreground. -->
+    <group
+        android:translateX="-26"
+        android:translateY="-22.7">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M33.5,48H74.5A2.5,2.5 0 0 1 77,50.5A2.5,2.5 0 0 1 74.5,53H33.5A2.5,2.5 0 0 1 31,50.5A2.5,2.5 0 0 1 33.5,48ZM35,55H73V67.5A9.5,9.5 0 0 1 63.5,77H44.5A9.5,9.5 0 0 1 35,67.5V55ZM31.5,57.5H33.5A2.5,2.5 0 0 1 36,60A2.5,2.5 0 0 1 33.5,62.5H31.5A2.5,2.5 0 0 1 29,60A2.5,2.5 0 0 1 31.5,57.5ZM74.5,57.5H76.5A2.5,2.5 0 0 1 79,60A2.5,2.5 0 0 1 76.5,62.5H74.5A2.5,2.5 0 0 1 72,60A2.5,2.5 0 0 1 74.5,57.5Z" />
+        <path
+            android:pathData="M41.5,43C39.4,40.55 39.4,38.45 41.5,36S43.6,31.45 41.5,29"
+            android:strokeWidth="4.4"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M52.5,43C50.4,40.1125 50.4,37.6375 52.5,34.75S54.6,29.3875 52.5,26.5"
+            android:strokeWidth="4.4"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:fillColor="#FFFFB547"
+            android:pathData="M64.5,25.8Q65.796,31.704 71.7,33Q65.796,34.296 64.5,40.2Q63.204,34.296 57.3,33Q63.204,31.704 64.5,25.8Z" />
+    </group>
+</vector>

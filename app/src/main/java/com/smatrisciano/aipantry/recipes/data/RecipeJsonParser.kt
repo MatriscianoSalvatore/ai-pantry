@@ -138,7 +138,17 @@ object RecipeJsonParser {
                 }
                 else -> null
             }
-        }.distinctBy { it.name.lowercase() }
+        }
+            .map { it.copy(name = stripImplicitLabel(it.name), quantity = stripImplicitLabel(it.quantity)) }
+            .filter { it.name.isNotBlank() }
+            .distinctBy { it.name.lowercase() }
+
+    /**
+     * The model sometimes marks an ingredient it assumes is at home as "(implicito)" /
+     * "(implicit)": a note to itself, not something to show.
+     */
+    private fun stripImplicitLabel(text: String): String =
+        text.replace(implicitLabel, "").replace(Regex("\\s{2,}"), " ").trim().trimEnd('-', ',').trim()
 
     /**
      * Splits name and quantity and forces metric units (g/ml). The small model
@@ -272,4 +282,7 @@ object RecipeJsonParser {
         Regex("""([\d.,]+)\s*(tbsps?|tsps?|tablespoons?|teaspoons?|cups?|cucchia(?:ini|ino|io|i)|tazz[ae])""", RegexOption.IGNORE_CASE)
 
     private val leadingNumberRegex = Regex("""^\s*\d+[.)]\s*""")
+    // "(implicito)", "[implicit]" or a bare "implicito" left as the quantity
+    private val implicitLabel =
+        Regex("""[(\[]\s*(?:implicit[oaie]?|implied|sottintes[oaie])\s*[)\]]|\b(?:implicit[oaie]?|implied)\b""", RegexOption.IGNORE_CASE)
 }

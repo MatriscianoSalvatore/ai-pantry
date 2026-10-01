@@ -162,7 +162,7 @@ class LlmRecipeGenerator(
     /**
      * With a fixed seed the output is deterministic (bit-identical on CPU):
      * "Regenerate" and the retries would always give the same answer. So every new
-     * request for the same prompt uses other seeds; the first one stays as it was.
+     * request for the same prompt moves on to seeds not used yet, starting from 1.
      */
     private val promptRounds = mutableMapOf<String, Int>()
 

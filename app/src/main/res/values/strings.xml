@@ -7,54 +7,57 @@
     <string name="remove_ingredient">Remove %1$s</string>
     <string name="fridge">Fridge</string>
     <string name="pantry">Pantry</string>
-    <plurals name="ingredient_count">
-        <item quantity="one">%d ingredient</item>
-        <item quantity="other">%d ingredients</item>
-    </plurals>
+    <string name="close">Close</string>
+    <string name="engine_on_device">%1$s · on-device</string>
+    <string name="private_on_device">Private · runs on your phone</string>
 
     <!-- Inventory -->
-    <string name="inventory_subtitle">Cook from your fridge · 100% on-device</string>
     <string name="clear_all">Clear all</string>
-    <string name="section_fridge">🧊 Fridge</string>
-    <string name="section_pantry">🗄️ Pantry</string>
-    <string name="what_can_i_cook_count">What can I cook? (%1$d)</string>
     <string name="scan">Scan</string>
     <string name="empty_pantry_title">Your pantry is empty</string>
-    <string name="empty_pantry_body">Take a photo of your fridge and pantry.\nIngredients are detected on-device — photos never leave your phone.</string>
+    <string name="empty_pantry_body">Snap your fridge and pantry: AI Pantry recognizes what\'s inside and suggests what to cook.</string>
     <string name="scan_my_fridge">Scan my fridge</string>
-    <string name="ai_status_ready">%1$s ready · on-device</string>
     <string name="ai_status_downloading">Downloading %1$s…</string>
     <string name="ai_status_preparing">Preparing %1$s…</string>
-    <string name="ai_status_failed">AI model unavailable — restart the app to retry</string>
+    <string name="inventory_title">Your kitchen</string>
+    <plurals name="inventory_summary">
+        <item quantity="one">%d ingredient ready to cook</item>
+        <item quantity="other">%d ingredients ready to cook</item>
+    </plurals>
+    <string name="ai_status_failed_short">AI unavailable · restart the app</string>
 
     <!-- Scan -->
     <string name="captured_photo">Captured photo</string>
-    <plurals name="scan_session_count">
-        <item quantity="one">%d ingredient in this scan session · tap to review</item>
-        <item quantity="other">%d ingredients in this scan session · tap to review</item>
-    </plurals>
     <string name="pick_from_gallery">Pick from gallery</string>
-    <string name="detecting_ingredients">Detecting ingredients on-device…</string>
     <string name="point_at_fridge">Point at your fridge and shoot</string>
     <string name="point_at_pantry">Point at your pantry and shoot</string>
     <string name="take_another_photo">Take another photo</string>
-    <string name="ingredients_detected">Ingredients detected</string>
-    <string name="detection_engine">Engine: %1$s · 100%% on-device</string>
     <string name="scan_another">Scan another</string>
-    <string name="add_to_pantry_count">Add to pantry (%1$d)</string>
-    <string name="add_to_fridge_count">Add to fridge (%1$d)</string>
-    <string name="add_to_fridge_and_pantry_count">Add to fridge and pantry (%1$d)</string>
     <string name="camera_permission_rationale">Camera access is needed to scan your fridge and pantry.\nPhotos never leave your device.</string>
     <string name="grant_camera_access">Grant camera access</string>
     <string name="error_no_ingredients">No ingredients recognized in this photo. Try a closer shot of a single ingredient.</string>
     <string name="error_detection_failed">Ingredient detection failed. Try another photo.</string>
+    <plurals name="review_scan">
+        <item quantity="one">Review %d ingredient</item>
+        <item quantity="other">Review %d ingredients</item>
+    </plurals>
+    <string name="analyzing_title">Recognizing ingredients</string>
+    <string name="analyzing_caption">On-device · the photo stays on your phone</string>
+    <plurals name="ingredients_found">
+        <item quantity="one">%d ingredient found</item>
+        <item quantity="other">%d ingredients found</item>
+    </plurals>
+    <string name="results_subtitle">Remove anything that isn\'t right, then add the rest.</string>
+    <string name="add_to_fridge">Add to fridge</string>
+    <string name="add_to_pantry">Add to pantry</string>
+    <string name="add_to_fridge_and_pantry">Add to fridge and pantry</string>
+    <string name="camera_permission_title">Scan what you have</string>
 
     <!-- Recipes -->
     <string name="what_can_i_cook">What can I cook?</string>
     <string name="regenerate">Regenerate</string>
     <string name="recipe_generation_failed">Recipe generation failed</string>
     <string name="recipe_generation_failed_body">The on-device model didn\'t return valid recipes. Try again.</string>
-    <string name="generation_engine">%1$s · 100%% on-device</string>
     <string name="progress_loading_model">Loading %1$s on-device…</string>
     <plurals name="progress_generating">
         <item quantity="one">Generating recipes with %d ingredient…</item>
@@ -62,18 +65,31 @@
     </plurals>
     <string name="progress_retrying">Output not parseable, retrying…</string>
     <string name="prep_time_minutes">%1$d min</string>
-    <string name="missing_ingredients">🛒 Missing: %1$s</string>
+    <plurals name="missing_ingredients">
+        <item quantity="one">Missing: %1$s</item>
+        <item quantity="other">Missing: %1$s</item>
+    </plurals>
     <string name="difficulty_easy">Easy</string>
     <string name="difficulty_medium">Medium</string>
     <string name="difficulty_hard">Hard</string>
+    <string name="recipes_title">Here\'s what you can cook</string>
+    <plurals name="recipes_subtitle">
+        <item quantity="one">Ideas based on your %d ingredient</item>
+        <item quantity="other">Ideas based on your %d ingredients</item>
+    </plurals>
+    <string name="generating_title">Creating your recipes</string>
+    <string name="more_count">+%1$d</string>
 
     <!-- Recipe detail -->
     <string name="ingredients_from_pantry">Ingredients from your pantry</string>
     <string name="you_will_also_need">You\'ll also need</string>
     <string name="instructions">Instructions</string>
-    <string name="writing_instructions">Writing the instructions on-device…</string>
+    <string name="writing_instructions">Writing the steps…</string>
     <string name="instructions_failed">Couldn\'t generate the instructions</string>
     <string name="variants">Variants</string>
+    <string name="stat_time">Time</string>
+    <string name="stat_difficulty">Difficulty</string>
+    <string name="stat_ingredients">Ingredients</string>
     <!-- Shown in rotation while Gemma generates, to make the wait feel shorter -->
     <string-array name="cooking_wait_phrases">
         <item>🔪 Chopping the vegetables…</item>

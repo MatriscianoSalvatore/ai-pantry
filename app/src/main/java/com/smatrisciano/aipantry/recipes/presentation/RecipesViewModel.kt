@@ -12,6 +12,7 @@ import com.smatrisciano.aipantry.inventory.domain.repository.InventoryRepository
 import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.presentation.RecipesActions.Interaction
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +31,9 @@ class RecipesViewModel(
 
     private var inventory: List<Ingredient> = emptyList()
 
+    /** The running generation: one at a time, the engine can't serve two conversations. */
+    private var generationJob: Job? = null
+
     init {
         generate()
     }
@@ -42,6 +46,8 @@ class RecipesViewModel(
     }
 
     private fun generate() {
+        // A double tap on Regenerate/Retry (still tappable while they fade out) is ignored
+        if (generationJob?.isActive == true) return
         _uiState.update {
             it.copy(
                 isGenerating = true,
@@ -52,7 +58,7 @@ class RecipesViewModel(
                 generationCompleted = false
             )
         }
-        viewModelScope.launch {
+        generationJob = viewModelScope.launch {
             val start = SystemClock.elapsedRealtime()
             inventory = inventoryRepository.observeInventory().first()
             _uiState.update { it.copy(ingredientCount = inventory.size) }

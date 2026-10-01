@@ -4,6 +4,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.lifecycle.ViewModel
@@ -48,9 +53,23 @@ class MainActivity : ComponentActivity() {
 private fun AiPantryNavHost() {
     val navController = rememberNavController()
 
+    // Material shared-axis X: the new screen slides in from the side as the old one
+    // drifts away, both fading; reversed when going back
     NavHost(
         navController = navController,
-        startDestination = Destination.InventoryRoutes.graphRoot.route
+        startDestination = Destination.InventoryRoutes.graphRoot.route,
+        enterTransition = {
+            slideInHorizontally(tween(NAV_ANIMATION_MILLIS)) { it / 5 } + fadeIn(tween(NAV_ANIMATION_MILLIS))
+        },
+        exitTransition = {
+            slideOutHorizontally(tween(NAV_ANIMATION_MILLIS)) { -it / 10 } + fadeOut(tween(NAV_ANIMATION_MILLIS / 2))
+        },
+        popEnterTransition = {
+            slideInHorizontally(tween(NAV_ANIMATION_MILLIS)) { -it / 10 } + fadeIn(tween(NAV_ANIMATION_MILLIS))
+        },
+        popExitTransition = {
+            slideOutHorizontally(tween(NAV_ANIMATION_MILLIS)) { it / 5 } + fadeOut(tween(NAV_ANIMATION_MILLIS / 2))
+        }
     ) {
         composable(Destination.InventoryRoutes.graphRoot.route) {
             InventoryScreenRoot(
@@ -113,6 +132,8 @@ private fun AiPantryNavHost() {
         }
     }
 }
+
+private const val NAV_ANIMATION_MILLIS = 300
 
 /** ViewModel shared by the destinations of the same nav graph. */
 @Composable

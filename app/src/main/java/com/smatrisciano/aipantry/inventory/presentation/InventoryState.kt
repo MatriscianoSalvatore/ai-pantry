@@ -6,6 +6,8 @@ import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 enum class AiStatus { READY, DOWNLOADING, PREPARING, FAILED }
 
 data class InventoryState(
+    /** False until the first inventory load: before that the kitchen is unknown, not empty. */
+    val isLoaded: Boolean = false,
     val fridgeItems: List<Ingredient> = emptyList(),
     val pantryItems: List<Ingredient> = emptyList(),
     val aiStatus: AiStatus = AiStatus.PREPARING,

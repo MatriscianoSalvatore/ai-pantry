@@ -12,18 +12,18 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Estrae e deserializza l'array JSON di ricette dall'output dell'LLM.
- * Tollerante per costruzione: testo extra attorno al JSON, campi mancanti o
- * malformati su singole ricette (l'elemento invalido viene scartato, non
- * l'intero array — gli LLM piccoli sbagliano spesso un campo su una ricetta).
+ * Extracts and deserialises the JSON array of recipes from the LLM output.
+ * Tolerant by design: extra text around the JSON, missing or malformed fields
+ * on single recipes (the invalid element is dropped, not the whole array:
+ * small LLMs often get one field wrong on one recipe).
  */
 @OptIn(ExperimentalSerializationApi::class)
 object RecipeJsonParser {
 
-    // Alias snake_case: gli LLM piccoli non rispettano sempre il camelCase richiesto.
-    // Alias italiani: col prompt in italiano il modello a volte traduce anche le chiavi.
-    // steps/variants come JsonElement: il modello a volte emette oggetti
-    // ([{"step": "..."}]) invece di stringhe.
+    // snake_case aliases: small LLMs don't always respect the requested camelCase.
+    // Italian aliases: with the Italian prompt the model sometimes translates the keys too.
+    // steps/variants as JsonElement: the model sometimes emits objects
+    // ([{"step": "..."}]) instead of strings.
     @Serializable
     private data class RecipeDto(
         @JsonNames("titolo") val title: String = "",
@@ -43,12 +43,12 @@ object RecipeJsonParser {
     }
 
     fun parse(rawOutput: String): List<Recipe> {
-        // Il modello a volte emette un array [{...}], a volte una sequenza di
-        // oggetti separati (ognuno nel suo fence ```json). Estraiamo TUTTI gli
-        // oggetti bilanciati e teniamo quelli che sono ricette (hanno un title):
-        // così entrambi i formati funzionano.
+        // The model sometimes emits an array [{...}], sometimes a sequence of
+        // separate objects (each in its own ```json fence). Extract ALL the balanced
+        // objects and keep the ones that are recipes (they have a title): that way
+        // both formats work.
         val cleaned = stripFences(rawOutput)
-        // 1° passaggio normale; se non trova oggetti ma l'output è escappato, de-escappa
+        // 1st pass as is; if it finds no objects but the output is escaped, unescape it
         val objects = extractObjects(cleaned)
             .ifEmpty { if ("\\\"" in cleaned) extractObjects(deEscape(cleaned)) else emptyList() }
         val recipes = objects
@@ -79,7 +79,7 @@ object RecipeJsonParser {
         @JsonNames("varianti") val variants: List<JsonElement> = emptyList()
     )
 
-    /** EASY/MEDIUM/HARD come chiesto, ma tollera la difficoltà tradotta in italiano. */
+    /** EASY/MEDIUM/HARD as requested, but tolerates the difficulty translated into Italian. */
     private fun parseDifficulty(raw: String): Difficulty =
         when (raw.trim().lowercase()) {
             "facile" -> Difficulty.EASY
@@ -88,7 +88,7 @@ object RecipeJsonParser {
             else -> runCatching { Difficulty.valueOf(raw.trim().uppercase()) }.getOrDefault(Difficulty.EASY)
         }
 
-    /** Completa la ricetta con quantità/steps/varianti dall'output del secondo stadio. */
+    /** Completes the recipe with quantities/steps/variants from the second stage's output. */
     fun parseDetails(recipe: Recipe, rawOutput: String): Recipe {
         val cleaned = stripFences(rawOutput)
         val objectJson = extractBalanced(cleaned, '{', '}')
@@ -98,8 +98,8 @@ object RecipeJsonParser {
         val steps = dto.steps.toCleanStrings()
         require(steps.isNotEmpty()) { "No steps in LLM output" }
 
-        // Il 1B nella lista spesso omette le quantità: qui (compito focalizzato)
-        // le produce in modo più affidabile — le fondiamo dove mancano.
+        // In the list the small model often omits quantities: here (a focused task)
+        // it produces them more reliably, so merge them where missing.
         val amounts = dto.ingredients.toIngredients()
         val enriched = recipe.usedIngredients.map { ing ->
             if (ing.quantity.isNotBlank()) return@map ing
@@ -120,16 +120,16 @@ object RecipeJsonParser {
     }
 
     /**
-     * Normalizza gli ingredienti: stringhe ("200 g Pasta") o oggetti
-     * ({"name": "Pasta", "quantity": "200 g"}). Nome e quantità restano
-     * separati: il nome serve al matching con l'inventario, la quantità alla UI.
+     * Normalises the ingredients: strings ("200 g Pasta") or objects
+     * ({"name": "Pasta", "quantity": "200 g"}). Name and quantity stay
+     * separate: the name is for matching against the inventory, the quantity for the UI.
      */
     private fun List<JsonElement>.toIngredients(): List<RecipeIngredient> =
         mapNotNull { element ->
             when (element) {
-                // Formato principale: "Ingrediente - quantità" (leggero per il modello)
+                // Main format: "Ingredient - quantity" (light for the model)
                 is JsonPrimitive -> element.content.takeIf { it.isNotBlank() }?.let { splitIngredient(it) }
-                // Fallback: {"name": ..., "quantity": ...} se il modello usa oggetti
+                // Fallback: {"name": ..., "quantity": ...} if the model uses objects
                 is JsonObject -> {
                     val name = ingredientNameKeys.firstNotNullOfOrNull { (element[it] as? JsonPrimitive)?.content }
                     val qty = ingredientQtyKeys.firstNotNullOfOrNull { (element[it] as? JsonPrimitive)?.content }
@@ -141,22 +141,22 @@ object RecipeJsonParser {
         }.distinctBy { it.name.lowercase() }
 
     /**
-     * Separa nome e quantità e forza le unità metriche (g/ml). Il modello 1B
-     * non rispetta il formato richiesto, quindi qui gestiamo entrambi i casi:
-     *  - "Pasta - 200 g" (formato chiesto);
-     *  - "250g Flour" / "2 tbsp Sugar" / "2 Bananas" (quantità in testa, comune).
-     * tbsp/tsp/cup vengono convertiti in grammi/ml approssimati.
+     * Splits name and quantity and forces metric units (g/ml). The small model
+     * doesn't respect the requested format, so both cases are handled here:
+     *  - "Pasta - 200 g" (the requested format);
+     *  - "250g Flour" / "2 tbsp Sugar" / "2 Bananas" (quantity first, common).
+     * tbsp/tsp/cup are converted to approximate grams/ml.
      */
     private fun splitIngredient(raw: String): RecipeIngredient {
         val s = raw.trim()
-        // formato "Nome - quantità"
+        // "Name - quantity" format
         ingredientSeparator.find(s)?.let { sep ->
             return RecipeIngredient(
                 name = s.substring(0, sep.range.first).trim(),
                 quantity = toMetric(s.substring(sep.range.last + 1).trim())
             )
         }
-        // formato "quantità Nome" (es. "250g Flour", "2 tbsp Sugar")
+        // "quantity Name" format (e.g. "250g Flour", "2 tbsp Sugar")
         quantityPrefix.find(s)?.takeIf { it.range.first == 0 }?.let { pfx ->
             val name = s.substring(pfx.range.last + 1).trim()
             if (name.isNotEmpty()) return RecipeIngredient(name, toMetric(pfx.value.trim()))
@@ -164,13 +164,13 @@ object RecipeJsonParser {
         return RecipeIngredient(name = s)
     }
 
-    /** Converte tbsp/tsp/cup (e cucchiai/cucchiaini/tazze) in g/ml approssimati; lascia invariato ciò che è già metrico. */
+    /** Converts tbsp/tsp/cup (and cucchiai/cucchiaini/tazze) to approximate g/ml; leaves anything already metric unchanged. */
     private fun toMetric(quantity: String): String {
         val m = imperialUnit.find(quantity) ?: return quantity
         val amount = m.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return quantity
         val unit = m.groupValues[2].lowercase()
         val grams = when {
-            // "cucchiaino" prima di "cucchiai": il secondo è prefisso del primo
+            // "cucchiaino" before "cucchiai": the latter is a prefix of the former
             unit.startsWith("tsp") || unit.startsWith("teaspoon") || unit.startsWith("cucchiain") -> amount * 5
             unit.startsWith("tbsp") || unit.startsWith("tablespoon") || unit.startsWith("cucchiai") -> amount * 15
             unit.startsWith("cup") || unit.startsWith("tazz") -> amount * 240
@@ -180,9 +180,9 @@ object RecipeJsonParser {
     }
 
     /**
-     * Normalizza gli elementi di steps/variants: stringhe dirette, oppure
-     * oggetti tipo {"step": "..."} da cui estrarre il testo. La UI numera già
-     * i passi, quindi via anche l'eventuale "1. " prodotto dal modello.
+     * Normalises the steps/variants items: plain strings, or objects like
+     * {"step": "..."} to pull the text from. The UI already numbers the steps,
+     * so any "1. " produced by the model goes too.
      */
     private fun List<JsonElement>.toCleanStrings(): List<String> =
         mapNotNull { element -> element.extractText() }
@@ -197,22 +197,22 @@ object RecipeJsonParser {
         else -> null
     }
 
-    /** Rimuove i fence markdown attorno al JSON. */
+    /** Removes the markdown fences around the JSON. */
     private fun stripFences(raw: String): String =
         raw.replace("```json", "").replace("```", "")
 
     /**
-     * De-escappa un output in cui il modello ha restituito il JSON con
-     * virgolette/newline escappate (`\"title\"`, `\n`) — capita col 1B che
-     * imita gli esempi del prompt: così il bracket matching riconosce le stringhe.
+     * Unescapes an output where the model returned the JSON with escaped
+     * quotes/newlines (`\"title\"`, `\n`): it happens when the small model imitates
+     * the prompt's examples. This way bracket matching recognises the strings.
      */
     private fun deEscape(raw: String): String =
         raw.replace("\\n", "\n").replace("\\t", " ").replace("\\\"", "\"").replace("\\/", "/")
 
     /**
-     * Estrae il primo blocco JSON bilanciato (array o oggetto) da [text] a
-     * partire da [from], con bracket matching che rispetta stringhe ed escape.
-     * Ritorna null se non trova una struttura bilanciata.
+     * Extracts the first balanced JSON block (array or object) from [text]
+     * starting at [from], with bracket matching that respects strings and escapes.
+     * Returns null if no balanced structure is found.
      */
     private fun extractBalanced(text: String, open: Char, close: Char, from: Int = 0): String? {
         val start = text.indexOf(open, from)
@@ -238,10 +238,10 @@ object RecipeJsonParser {
     }
 
     /**
-     * Tutti gli oggetti JSON top-level `{...}` nel testo, in ordine. Scorre
-     * saltando oltre ogni oggetto completo, quindi gli oggetti annidati (es.
-     * ingredienti dentro una ricetta) non vengono estratti separatamente.
-     * Robusto a fence markdown, testo extra, array o oggetti-sciolti.
+     * All the top-level JSON objects `{...}` in the text, in order. It skips past
+     * every complete object, so nested objects (e.g. ingredients inside a recipe)
+     * aren't extracted separately. Robust to markdown fences, extra text, arrays
+     * or loose objects.
      */
     private fun extractObjects(text: String): List<String> {
         val objects = mutableListOf<String>()
@@ -261,7 +261,7 @@ object RecipeJsonParser {
     private val ingredientNameKeys = listOf("name", "ingredient", "item", "nome", "ingrediente")
     private val ingredientQtyKeys = listOf("quantity", "amount", "qty", "measure", "quantita", "quantità", "dose")
     private val ingredientSeparator = Regex("""\s[-–:]\s""")
-    // Quantità in testa: numero (anche frazione) + eventuale unità attaccata o staccata
+    // Quantity first: a number (fractions too) + an optional unit, attached or spaced
     private val quantityPrefix =
         Regex(
             """^\d+[\d/.,]*\s*(g|kg|ml|l|tbsps?|tsps?|tablespoons?|teaspoons?|cups?|pcs?|pieces?|cans?|packs?|cloves?|slices?|bunch(?:es)?|""" +

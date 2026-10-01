@@ -3,7 +3,7 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Carota stilizzata -->
+    <!-- Stylised carrot -->
     <group android:translateX="27" android:translateY="27">
         <path
             android:fillColor="#FF8F3C"

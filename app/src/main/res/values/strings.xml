@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">AI Pantry</string>
 
-    <!-- Comuni -->
+    <!-- Common -->
     <string name="back">Back</string>
     <string name="retry">Retry</string>
     <string name="remove_ingredient">Remove %1$s</string>
@@ -12,7 +12,7 @@
         <item quantity="other">%d ingredients</item>
     </plurals>
 
-    <!-- Inventario -->
+    <!-- Inventory -->
     <string name="inventory_subtitle">Cook from your fridge · 100% on-device</string>
     <string name="clear_all">Clear all</string>
     <string name="section_fridge">🧊 Fridge</string>
@@ -27,7 +27,7 @@
     <string name="ai_status_preparing">Preparing %1$s…</string>
     <string name="ai_status_failed">AI model unavailable — restart the app to retry</string>
 
-    <!-- Scansione -->
+    <!-- Scan -->
     <string name="captured_photo">Captured photo</string>
     <plurals name="scan_session_count">
         <item quantity="one">%d ingredient in this scan session · tap to review</item>
@@ -47,7 +47,7 @@
     <string name="error_no_ingredients">No ingredients recognized in this photo. Try a closer shot of a single ingredient.</string>
     <string name="error_detection_failed">Ingredient detection failed. Try another photo.</string>
 
-    <!-- Ricette -->
+    <!-- Recipes -->
     <string name="what_can_i_cook">What can I cook?</string>
     <string name="regenerate">Regenerate</string>
     <string name="recipe_generation_failed">Recipe generation failed</string>
@@ -65,7 +65,7 @@
     <string name="difficulty_medium">Medium</string>
     <string name="difficulty_hard">Hard</string>
 
-    <!-- Dettaglio ricetta -->
+    <!-- Recipe detail -->
     <string name="ingredients_from_pantry">Ingredients from your pantry</string>
     <string name="you_will_also_need">You\'ll also need</string>
     <string name="instructions">Instructions</string>

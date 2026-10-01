@@ -21,14 +21,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 /**
- * Cache del motore LiteRT-LM: il caricamento del modello costa secondi e GB di RAM,
- * quindi l'istanza viene riusata finché il modello attivo non cambia.
+ * LiteRT-LM engine cache: loading the model costs seconds and GBs of RAM, so
+ * the instance is reused until the active model changes.
  *
- * Backend: GPU-first, ma su alcuni device l'accelerator GPU di LiteRT-LM non si
- * carica affatto e l'inferenza si pianta (chiamata nativa non interrompibile).
- * Quando succede, il backend viene marcato rotto in modo **persistente** per quel
- * modello: dai lanci successivi si va dritti su CPU, senza più sprecare tempo ad
- * appendersi sulla GPU morta.
+ * Backend: GPU first, but on some devices the LiteRT-LM GPU accelerator doesn't
+ * load at all and inference hangs (non-interruptible native call). When that
+ * happens the backend is marked broken **persistently** for that model: later
+ * launches go straight to CPU, without wasting time hanging on the dead GPU.
  */
 class LlmEngineHolder(private val context: Context) {
 
@@ -48,10 +47,9 @@ class LlmEngineHolder(private val context: Context) {
             engineIsGpu = false
             engine = createEngine(path, model, gpu = wantGpu)?.also { engineIsGpu = wantGpu }
                 ?: run {
-                    // L'init GPU è fallita subito (non un hang): a differenza del
-                    // watchdog, senza persistere qui ogni acquire() futura
-                    // ritenterebbe e fallirebbe di nuovo la stessa GPU, pagando
-                    // qualche secondo a vuoto ogni volta
+                    // GPU init failed right away (not a hang): unlike the watchdog, without
+                    // persisting it here every future acquire() would retry and fail on the
+                    // same GPU again, wasting a few seconds each time
                     if (wantGpu) persistGpuBroken(model)
                     createEngine(path, model, gpu = false)?.also { engineIsGpu = false }
                 }
@@ -64,7 +62,7 @@ class LlmEngineHolder(private val context: Context) {
 
     fun currentBackendIsGpu(): Boolean = engineIsGpu
 
-    /** Conversazione usa-e-getta sull'engine attivo, coi parametri di sampling richiesti. */
+    /** Throwaway conversation on the active engine, with the requested sampling parameters. */
     fun createConversation(
         model: LlmModel,
         file: File,
@@ -82,27 +80,26 @@ class LlmEngineHolder(private val context: Context) {
     }
 
     /**
-     * All'avvio: carica l'engine e, se è finito su GPU, verifica con una micro
-     * inferenza che la GPU funzioni davvero (su alcuni device l'accelerator non
-     * si carica e l'inferenza si pianta). Se la sonda va in timeout, marca la GPU
-     * rotta e ricarica su CPU — così la prima generazione dell'utente non paga
-     * l'attesa. Job scollegato: il thread nativo eventualmente piantato non
-     * blocca il warm-up.
+     * At startup: loads the engine and, if it ended up on GPU, checks with a tiny
+     * inference that the GPU really works (on some devices the accelerator doesn't
+     * load and inference hangs). If the probe times out, marks the GPU broken and
+     * reloads on CPU, so the user's first generation doesn't pay the wait.
+     * Detached job: a possibly stuck native thread doesn't block the warm-up.
      */
     suspend fun warmUp(model: LlmModel, file: File) {
         acquire(model, file)
         if (!currentBackendIsGpu()) return
 
         val probe = probeScope.async {
-            // Prompt rappresentativo (genera qualche frase con i parametri reali):
-            // una micro-generazione banale passerebbe anche su GPU rotta
+            // Representative prompt (generates a few sentences with the real parameters):
+            // a trivial micro-generation would pass even on a broken GPU
             createConversation(model, file, temperature = 0.5, topK = 40, topP = 0.9).use { conversation ->
                 conversation.sendMessage(Contents.of(Content.Text("List five common fruits, one per line.")))
             }
         }
-        // La GPU rotta può manifestarsi in due modi: hang (timeout) oppure
-        // eccezione immediata alla prima inferenza (es. OpenCL assente
-        // sull'emulatore, dove l'init dell'engine invece riesce)
+        // A broken GPU can show up in two ways: a hang (timeout) or an immediate
+        // exception on the first inference (e.g. OpenCL missing on the emulator,
+        // where engine init succeeds instead)
         val ok = try {
             withTimeoutOrNull(GPU_PROBE_TIMEOUT_MS) { probe.await() } != null
         } catch (e: CancellationException) {
@@ -123,20 +120,20 @@ class LlmEngineHolder(private val context: Context) {
 
     private val probeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // Backend.CPU() di default gira su 1 thread solo: su un 2.6GB multimodale
-    // significa lasciare inutilizzati quasi tutti i core. Usare TUTTI i core
-    // però fa scaldare e throttlare i chip mobile sotto carico sostenuto (min
-    // di calcolo), rallentando di nuovo verso la fine — 4 thread è un
-    // compromesso ragionevole tra parallelismo e calore. Sull'emulatore il
-    // throttling termico non esiste: si usano tutti i core disponibili meno uno.
+    // Backend.CPU() runs on a single thread by default: on a 2.6 GB multimodal
+    // model that leaves almost every core idle. Using ALL the cores, though, heats
+    // and throttles mobile chips under sustained load (minutes of compute), slowing
+    // down again towards the end: 4 threads is a reasonable trade-off between
+    // parallelism and heat. The emulator has no thermal throttling: it uses all
+    // available cores but one.
     private val cpuThreadCount: Int =
         (Runtime.getRuntime().availableProcessors() - 1)
             .coerceIn(1, if (isEmulator) Int.MAX_VALUE else 4)
 
     /**
-     * La GPU ha prodotto output corrotto o si è piantata: marca il backend rotto
-     * (persistente) e ricarica su CPU. Ritorna false se anche la CPU fallisce —
-     * a quel punto non c'è rimedio.
+     * The GPU produced corrupted output or hung: marks the backend broken
+     * (persistently) and reloads on CPU. Returns false if the CPU fails too, at
+     * which point there is no remedy.
      */
     @Synchronized
     fun reportGpuUnusable(model: LlmModel): Boolean {
@@ -182,12 +179,12 @@ class LlmEngineHolder(private val context: Context) {
                 android.os.Build.FINGERPRINT.contains("emulator") ||
                 android.os.Build.FINGERPRINT.contains("generic")
 
-        // La sonda GPU all'avvio: se la micro inferenza non risponde in tempo,
-        // la GPU è inutilizzabile su questo device
+        // GPU probe at startup: if the tiny inference doesn't answer in time, the
+        // GPU is unusable on this device
         const val GPU_PROBE_TIMEOUT_MS = 120_000L
     }
 }
 
-/** LiteRT-LM non espone testo diretto su [Message]: va estratto dalle sue [Content.Text]. */
+/** LiteRT-LM exposes no direct text on [Message]: it has to be extracted from its [Content.Text]. */
 internal fun Message.text(): String =
     contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }

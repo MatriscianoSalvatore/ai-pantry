@@ -11,7 +11,7 @@ data class DetectedIngredient(
 )
 
 interface IngredientDetector {
-    /** Nome del motore mostrato in UI (es. "Gemma 4 E2B vision · LiteRT"). */
+    /** Engine name shown in the UI (e.g. "Gemma 4 E2B vision · LiteRT"). */
     val engineName: String
 
     suspend fun detect(bitmap: Bitmap, target: ScanTarget): List<DetectedIngredient>

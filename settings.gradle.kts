@@ -21,7 +21,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "AI Pantry"
 include(":app")
-// AI pack (Play for On-device AI): il modello LLM splittato in chunk ≤1.5GB
+// AI packs (Play for On-device AI): the LLM split into ≤1.5 GB chunks
 include(":llm_pack_0")
 include(":llm_pack_1")
 include(":llm_pack_2")

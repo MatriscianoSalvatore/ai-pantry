@@ -174,8 +174,8 @@ private fun CameraContent(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val imageCapture = remember {
-        // Il sensore full-res (es. 50MP) produrrebbe bitmap da centinaia di MB, che si
-        // sommano ai ~3GB del modello LLM già residente in memoria durante l'inferenza.
+        // The full-res sensor (e.g. 50 MP) would produce bitmaps of hundreds of MB, on
+        // top of the ~3 GB LLM already resident in memory during inference.
         ImageCapture.Builder()
             .setResolutionSelector(
                 ResolutionSelector.Builder()
@@ -209,7 +209,7 @@ private fun CameraContent(
         }
     )
 
-    // Fermo-immagine: dopo lo scatto si vede la foto, non il preview live
+    // Freeze frame: after the shot the photo is shown, not the live preview
     state.capturedPhoto?.let { photo ->
         Image(
             bitmap = photo.asImageBitmap(),
@@ -236,7 +236,7 @@ private fun CameraContent(
         Spacer(modifier = Modifier.weight(1f))
 
         if (state.accumulated.isNotEmpty()) {
-            // Tappabile: è la via per riaprire la sheet risultati dopo averla chiusa
+            // Tappable: it is how to reopen the results sheet after closing it
             Surface(
                 onClick = { onAction(Interaction.OnShowResultsClick) },
                 shape = RoundedCornerShape(20.dp),
@@ -278,7 +278,7 @@ private fun CameraContent(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Placeholder simmetrico per tenere lo shutter centrato
+                // Symmetric placeholder to keep the shutter centred
                 Spacer(modifier = Modifier.size(48.dp))
                 Spacer(modifier = Modifier.width(28.dp))
                 ShutterButton(
@@ -534,16 +534,16 @@ private fun takePhoto(
             }
 
             override fun onError(exception: ImageCaptureException) {
-                // In demo non blocchiamo il flusso: l'errore viene solo loggato da CameraX
+                // Demo app: don't block the flow, CameraX just logs the error
             }
         }
     )
 }
 
 /**
- * Decodifica un'immagine dalla galleria in software bitmap ARGB (serve per
- * comprimerla in JPEG prima di passarla al modello); ImageDecoder applica da
- * solo la rotazione EXIF.
+ * Decodes a gallery image into an ARGB software bitmap (needed to compress
+ * it to JPEG before passing it to the model); ImageDecoder applies the EXIF
+ * rotation on its own.
  */
 private fun decodeGalleryImage(context: Context, uri: android.net.Uri): Bitmap? =
     runCatching {

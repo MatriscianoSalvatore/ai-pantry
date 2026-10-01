@@ -18,10 +18,10 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Riconoscimento ingredienti con Gemini Nano on-device via AICore (ML Kit GenAI
- * Prompt API). Disponibile solo su device con AICore (Pixel 9+, S25+, ecc.) e
- * mai sull'emulatore: la disponibilità va verificata con [isUsable] prima di
- * chiamare [detect] — altrimenti si usa il detector di fallback.
+ * Ingredient recognition with Gemini Nano on-device via AICore (ML Kit GenAI
+ * Prompt API). Available only on devices with AICore and Prompt API support
+ * (e.g. Pixel 9 and later) and never on the emulator: check availability with
+ * [isUsable] before calling [detect], otherwise the fallback detector is used.
  */
 class NanoIngredientDetector : IngredientDetector {
 
@@ -33,9 +33,9 @@ class NanoIngredientDetector : IngredientDetector {
     private val downloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
-     * True solo se il modello è già sul device e pronto. Se è scaricabile, il
-     * download parte in background una volta sola: nel frattempo (e su device
-     * non supportati) si risponde false e il chiamante usa il fallback.
+     * True only if the model is already on the device and ready. If it can be
+     * downloaded, the download starts in the background, once: meanwhile (and on
+     * unsupported devices) this returns false and the caller uses the fallback.
      */
     suspend fun isUsable(): Boolean = runCatching {
         when (model.checkStatus()) {
@@ -73,8 +73,8 @@ class NanoIngredientDetector : IngredientDetector {
         return DetectionJsonParser.parse(rawOutput)
     }
 
-    // Il costo in token dell'immagine rientra nel limite input (~4k token) di
-    // AICore; 768px è il compromesso suggerito dalla documentazione
+    // The image's token cost fits within AICore's input limit (~4k tokens);
+    // 768 px is the trade-off suggested by the documentation
     private fun Bitmap.downscaled(maxSide: Int = 768): Bitmap {
         val largest = maxOf(width, height)
         if (largest <= maxSide) return this

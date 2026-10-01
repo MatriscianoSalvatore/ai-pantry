@@ -23,10 +23,11 @@ import kotlinx.serialization.json.Json
 import java.io.ByteArrayOutputStream
 
 /**
- * Riconoscimento ingredienti dalla foto con il modello multimodale attivo
- * (Gemma 4 E2B con vision modality, runtime LiteRT-LM) — completamente
- * on-device. Approccio "solo Gemma": nessun detector ausiliario, lo stesso
- * modello riconosce gli ingredienti e genera le ricette.
+ * Ingredient recognition from the photo with the active multimodal model
+ * (Gemma 4 E2B with vision modality, LiteRT-LM runtime), fully on-device.
+ * "Gemma only" approach: no auxiliary detector, the same model recognises the
+ * ingredients and generates the recipes. Kept as an alternative route, off the
+ * default path (see CaptureModule).
  */
 class LlmVisionIngredientDetector(
     private val modelRepository: ModelRepository,
@@ -43,10 +44,10 @@ class LlmVisionIngredientDetector(
         val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
         require(model.supportsVision) { "Active model has no vision support" }
 
-        // Il warm-up all'avvio ha già deciso il backend, quindi qui è affidabile.
-        // Su CPU ogni patch in più è prefill che l'utente aspetta: si scende a
-        // 256px (~256 patch contro ~1000) accettando meno dettaglio pur di
-        // restare in un tempo di scansione tollerabile.
+        // The warm-up at startup has already chosen the backend, so this is reliable.
+        // On CPU every extra patch is prefill the user waits for: drop to 256 px
+        // (~256 patches instead of ~1000), accepting less detail to keep the scan
+        // time tolerable.
         val maxSide = if (engineHolder.currentBackendIsGpu()) 512 else 256
         val jpeg = bitmap.downscaled(maxSide).toJpegBytes()
         val rawOutput = detectChecked(model, target, jpeg)
@@ -54,10 +55,10 @@ class LlmVisionIngredientDetector(
     }
 
     /**
-     * Stesso watchdog GPU di [com.smatrisciano.aipantry.recipes.data.LlmRecipeGenerator]:
-     * su driver degradato `sendMessage` può bloccarsi per sempre (chiamata
-     * nativa non interrompibile), quindi la vision inference gira in un job
-     * scollegato e allo scadere del timeout si forza la CPU.
+     * Same GPU watchdog as [com.smatrisciano.aipantry.recipes.data.LlmRecipeGenerator]:
+     * on a degraded driver `sendMessage` can block forever (non-interruptible
+     * native call), so vision inference runs in a detached job and the CPU is
+     * forced when the timeout expires.
      */
     private suspend fun detectChecked(model: LlmModel, target: ScanTarget, jpeg: ByteArray): String {
         val file = modelRepository.modelFile(model)
@@ -76,8 +77,8 @@ class LlmVisionIngredientDetector(
         if (!engineHolder.currentBackendIsGpu()) return sendMessage()
 
         val generation = watchdogScope.async { sendMessage() }
-        // Oltre all'hang, la GPU può fallire con eccezione immediata (es.
-        // OpenCL assente sull'emulatore): stessa sorte del timeout
+        // Besides hanging, the GPU can fail with an immediate exception (e.g.
+        // OpenCL missing on the emulator): same treatment as the timeout
         val result = try {
             withTimeoutOrNull(DETECTION_TIMEOUT_MS) { generation.await() }
         } catch (e: CancellationException) {
@@ -94,16 +95,16 @@ class LlmVisionIngredientDetector(
         }
     }
 
-    // Scope scollegato per il watchdog: i job che vi girano possono restare
-    // bloccati su una chiamata GPU nativa senza trascinarsi la coroutine chiamante
+    // Detached scope for the watchdog: its jobs can stay stuck on a native GPU
+    // call without dragging the calling coroutine along
     private val watchdogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // A 768px lato lungo produce fino a ~2400 patch nel vision encoder (quasi
-    // il limite 2520) e satura la RAM su device con poco margine, causando un
-    // kill silenzioso del processo da parte del low-memory killer di Android
-    // a metà inferenza. 512px riduce i patch di ~55% mantenendo abbastanza
-    // dettaglio per riconoscere ingredienti in una foto di frigo/dispensa;
-    // su backend CPU si scende a 256px (vedi [detect]).
+    // At 768 px on the long side it produces up to ~2400 patches in the vision
+    // encoder (almost the 2520 limit) and saturates RAM on devices with little
+    // headroom, causing a silent process kill by Android's low-memory killer
+    // mid-inference. 512 px cuts the patches by ~55% while keeping enough detail
+    // to recognise ingredients in a fridge/pantry photo; on the CPU backend it
+    // drops to 256 px (see [detect]).
     private fun Bitmap.downscaled(maxSide: Int): Bitmap {
         val largest = maxOf(width, height)
         if (largest <= maxSide) return this
@@ -125,13 +126,13 @@ class LlmVisionIngredientDetector(
     private companion object {
         const val TAG = "LlmVisionDetector"
 
-        // Vision inference è più pesante della sola generazione testo (token
-        // immagine extra): timeout più alto dei 75s usati per le ricette
+        // Vision inference is heavier than text-only generation (extra image
+        // tokens): a higher timeout than the 75 s used for recipes
         const val DETECTION_TIMEOUT_MS = 120_000L
     }
 }
 
-/** Estrae e deserializza le detection dall'output dell'LLM. */
+/** Extracts and deserialises the detections from the LLM output. */
 object DetectionJsonParser {
 
     @Serializable

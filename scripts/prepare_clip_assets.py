@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Precomputa gli embedding testuali per il detector zero-shot MobileCLIP-S2.
+"""Precomputes the text embeddings for the MobileCLIP-S2 zero-shot detector.
 
-Legge scripts/ingredient_labels.txt, calcola l'embedding di ogni label con il
-text encoder open_clip (stesso spazio dell'image encoder TFLite bundlato negli
-assets) e scrive app/src/main/assets/clip/label_embeddings.json, con i nomi
-italiani da scripts/ingredient_names_it.txt per i device in italiano.
+Reads scripts/ingredient_labels.txt, computes each label's embedding with the
+open_clip text encoder (same space as the TFLite image encoder bundled in the
+assets) and writes app/src/main/assets/clip/label_embeddings.json, with the
+Italian names from scripts/ingredient_names_it.txt for devices set to Italian.
 
-Con --verify-image controlla anche la parità tra l'image encoder TFLite e
-quello open_clip su un'immagine di test (cosine > 0.99 atteso).
+With --verify-image it also checks parity between the TFLite image encoder and
+the open_clip one on a test image (cosine > 0.99 expected).
 
-Uso:
+Usage:
   python scripts/prepare_clip_assets.py [--verify-image path/to/test.jpg]
 
-Dipendenze: torch, open_clip_torch, ai-edge-litert, pillow, numpy
+Dependencies: torch, open_clip_torch, ai-edge-litert, pillow, numpy
 """
 
 import argparse
@@ -33,11 +33,11 @@ TFLITE_FILE = ROOT / "app" / "src" / "main" / "assets" / "clip" / "mobileclip_s2
 MODEL = "MobileCLIP-S2"
 PRETRAINED = "datacompdr"
 
-# L'image encoder TFLite non sta in git (137MB > limite GitHub): si scarica
-# da Hugging Face al primo run
+# The TFLite image encoder isn't in git (137 MB > GitHub's limit): it is
+# downloaded from Hugging Face on the first run
 TFLITE_URL = "https://huggingface.co/plainhub/mobileclip-s2-tflite/resolve/main/mobileclip_s2_image.tflite"
 
-# Più template mediati migliorano lo zero-shot (pratica standard CLIP)
+# Averaging several templates improves zero-shot (standard CLIP practice)
 TEMPLATES = [
     "a photo of {}",
     "a photo of {} in a refrigerator",
@@ -47,11 +47,11 @@ TEMPLATES = [
 
 
 def load_labels() -> tuple[list[str], list[str], list[bool]]:
-    """Ritorna (labels, display_names, distractor_flags).
+    """Returns (labels, display_names, distractor_flags).
 
-    Il prefisso ~ marca i distrattori; la sintassi "label|display" fa
-    matchare la label specifica ("lactose-free milk") ma riporta in UI il
-    nome semplice ("milk").
+    The ~ prefix marks distractors; the "label|display" syntax matches the
+    specific label ("lactose-free milk") but reports the simple name ("milk")
+    in the UI.
     """
     labels, displays, distractors = [], [], []
     for line in LABELS_FILE.read_text().splitlines():
@@ -67,12 +67,12 @@ def load_labels() -> tuple[list[str], list[str], list[bool]]:
 
 
 def load_italian_names(displays: list[str], distractors: list[bool]) -> list[str]:
-    """Nome italiano per ogni label, cercato per display name inglese.
+    """Italian name for each label, looked up by English display name.
 
-    Il matching resta sulle label inglesi (il text encoder è addestrato su
-    caption inglesi): l'italiano è solo il nome riportato in UI e nei prompt.
-    Ogni display di un ingrediente deve avere la sua traduzione; i distrattori
-    non vengono mai mostrati e restano in inglese.
+    Matching stays on the English labels (the text encoder was trained on
+    English captions): Italian is only the name reported in the UI and in the
+    prompts. Every ingredient display name needs its translation; distractors
+    are never shown and stay in English.
     """
     names = {}
     for line in NAMES_IT_FILE.read_text().splitlines():
@@ -142,7 +142,7 @@ def ensure_tflite_model() -> None:
 
 
 def verify(model, preprocess, image_path: Path) -> None:
-    """Parità open_clip ↔ TFLite sull'image encoder."""
+    """open_clip ↔ TFLite parity on the image encoder."""
     from PIL import Image
     from ai_edge_litert.interpreter import Interpreter
 
@@ -157,8 +157,8 @@ def verify(model, preprocess, image_path: Path) -> None:
     out = interpreter.get_output_details()[0]
     print(f"TFLite input shape={inp['shape'].tolist()} dtype={inp['dtype'].__name__}")
 
-    # Stesso preprocessing del training: shortest-edge 256 bilineare + center
-    # crop, [0,1] senza normalizzazione (config ufficiale open_clip)
+    # Same preprocessing as training: shortest-edge 256 bilinear + center
+    # crop, [0,1] with no normalisation (official open_clip config)
     w, h = image.size
     scale = 256 / min(w, h)
     image = image.resize((round(w * scale), round(h * scale)), Image.BILINEAR)

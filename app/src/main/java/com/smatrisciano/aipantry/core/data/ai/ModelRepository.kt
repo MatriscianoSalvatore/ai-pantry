@@ -28,12 +28,12 @@ sealed interface ModelStatus {
 }
 
 /**
- * Provisioning del modello LLM senza download HTTP in-app (l'app non ha
- * nemmeno il permesso INTERNET). Due strade, decise dal flavor:
- *  - [ModelSource.AiPacks]: Play for On-device AI — chunk ≤1.5GB consegnati
- *    da Google Play (fast-follow) e ricomposti in un singolo .litertlm;
- *  - [ModelSource.BundledAsset]: modello embeddato negli assets dell'APK
- *    (Firebase App Distribution) e copiato in files al primo avvio.
+ * LLM provisioning without in-app HTTP downloads (the app's own manifest
+ * doesn't even declare INTERNET). Two routes, decided by the flavor:
+ *  - [ModelSource.AiPacks]: Play for On-device AI, ≤1.5 GB chunks delivered
+ *    by Google Play (fast-follow) and reassembled into a single .litertlm;
+ *  - [ModelSource.BundledAssets]: model embedded in the APK assets (`beta`
+ *    flavor, APK handed out manually) and copied into files on first launch.
  */
 class ModelRepository(
     private val context: Context,
@@ -56,8 +56,8 @@ class ModelRepository(
     }
 
     fun modelFile(model: LlmModel): File {
-        // Convenienza dev: modello sideloadato via adb ha priorità (le build via
-        // APK del flavor play non contengono gli AI pack)
+        // Dev convenience: a model sideloaded via adb takes priority (APK builds
+        // of the play flavor don't contain the AI packs)
         val sideloaded = File("/data/local/tmp/llm/${model.fileName}")
         if (sideloaded.exists()) return sideloaded
         return File(modelsDir(), model.fileName)
@@ -65,7 +65,7 @@ class ModelRepository(
 
     fun activeModel(): LlmModel = LlmCatalog.default
 
-    /** Il modello attivo, solo se pronto all'uso. */
+    /** The active model, only if ready to use. */
     fun readyActiveModel(): LlmModel? =
         activeModel().takeIf { _statuses.value[it.id] == ModelStatus.Ready }
 
@@ -77,23 +77,23 @@ class ModelRepository(
                 return@forEach
             }
             when (val source = model.source) {
-                // Zero-touch: il modello embeddato si prepara da solo al primo avvio
+                // Zero-touch: the embedded model prepares itself on first launch
                 is ModelSource.BundledAssets -> provisionBundled(model, source)
                 is ModelSource.AiPacks -> refreshAiPacks(model, source)
             }
         }
     }
 
-    // region AI pack (flavor play)
+    // region AI packs (play flavor)
 
     private suspend fun refreshAiPacks(model: LlmModel, source: ModelSource.AiPacks) {
         if (allPacksAvailable(model, source)) {
             assemble(model, source)
             return
         }
-        // Zero-touch: se i pack non sono ancora sul device li richiediamo subito
-        // a Play (fast-follow parte da solo dopo l'install, ma questo copre anche
-        // on-demand e ritenta se il primo tentativo era fallito)
+        // Zero-touch: if the packs aren't on the device yet, request them from Play
+        // right away (fast-follow starts by itself after install, but this also covers
+        // on-demand and retries if the first attempt failed)
         setStatus(model, ModelStatus.Downloading(0, model.approxSizeBytes))
         runCatching { aiPackManager.fetch(source.packNames).await() }
             .onSuccess { states ->
@@ -151,7 +151,7 @@ class ModelRepository(
         setStatus(model, current)
     }
 
-    /** Ricompone i chunk dei pack in un unico .litertlm utilizzabile da LiteRT-LM. */
+    /** Reassembles the pack chunks into a single .litertlm usable by LiteRT-LM. */
     private suspend fun assemble(model: LlmModel, source: ModelSource.AiPacks) =
         provisionMutex.withLock {
             if (isProvisioned(model)) {
@@ -170,7 +170,7 @@ class ModelRepository(
                     }
                 }
                 check(temp.renameTo(destination)) { "Cannot move assembled model into place" }
-                // I pack non servono più: si libera il doppio dello spazio
+                // The packs aren't needed anymore: this frees twice the space
                 source.packNames.forEach { aiPackManager.removePack(it) }
                 setStatus(model, ModelStatus.Ready)
             }.onFailure { error ->
@@ -194,7 +194,7 @@ class ModelRepository(
 
     // endregion
 
-    // region Modello embeddato nell'APK (flavor firebase)
+    // region Model embedded in the APK (beta flavor)
 
     private suspend fun provisionBundled(model: LlmModel, source: ModelSource.BundledAssets) =
         provisionMutex.withLock {
@@ -229,7 +229,7 @@ class ModelRepository(
 
     private fun isProvisioned(model: LlmModel): Boolean = modelFile(model).exists()
 
-    /** Rimuove modelli di versioni precedenti dell'app (es. dopo un cambio di catalogo). */
+    /** Removes models from previous app versions (e.g. after a catalog change). */
     private fun cleanupOrphanedFiles() {
         val known = LlmCatalog.all.map { it.fileName }.toSet()
         modelsDir().listFiles()?.forEach { file ->
@@ -247,8 +247,8 @@ class ModelRepository(
     }
 
     /**
-     * Pre-carica il motore LiteRT in background appena il modello è pronto:
-     * il primo scan/generazione non paga i ~30-60s di caricamento.
+     * Preloads the LiteRT engine in the background as soon as the model is ready:
+     * the first scan/generation doesn't pay the ~30-60 s of loading.
      */
     private val warmedUp = mutableSetOf<String>()
 

@@ -15,15 +15,18 @@ captures/
 
 ~$*
 
+# Python
+__pycache__/
+
 # Keystore
 *.jks
 *.keystore
 
-# Modelli AI LLM (troppo grandi per GitHub, >100MB — arrivano via Play come AI
-# pack o via lo script prepare_*_model.sh)
+# LLM models (too big for GitHub, >100 MB): they arrive via Play as AI packs,
+# or through scripts/prepare_model_packs.sh and scripts/prepare_beta_model.sh
 *.litertlm
 llm_pack_*/src/main/assets/model.part*
 app/src/beta/assets/llm/
 
-# Encoder MobileCLIP (137MB — lo scarica scripts/prepare_clip_assets.py)
+# MobileCLIP encoder (137 MB, downloaded by scripts/prepare_clip_assets.py)
 app/src/main/assets/clip/mobileclip_s2_image.tflite

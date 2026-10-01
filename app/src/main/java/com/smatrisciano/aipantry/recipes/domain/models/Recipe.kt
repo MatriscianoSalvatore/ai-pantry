@@ -8,10 +8,10 @@ enum class Difficulty { EASY, MEDIUM, HARD }
 @Serializable
 data class RecipeIngredient(
     val name: String,
-    /** Quantità per questa ricetta, es. "200 g", "2", "1 can". Vuota se non specificata. */
+    /** Quantity for this recipe, e.g. "200 g", "2", "1 can". Empty if not specified. */
     val quantity: String = ""
 ) {
-    /** Etichetta per la UI: "Pasta - 200 g" o solo "Pasta" se manca la quantità. */
+    /** UI label: "Pasta - 200 g", or just "Pasta" when the quantity is missing. */
     val display: String get() = if (quantity.isBlank()) name else "$name - $quantity"
 }
 

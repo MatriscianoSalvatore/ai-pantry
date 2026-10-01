@@ -2,7 +2,7 @@ package com.smatrisciano.aipantry.inventory.presentation
 
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 
-/** Stato del modello LLM per il banner: la UI lo traduce nella lingua del device. */
+/** LLM status for the banner: the UI translates it into the device language. */
 enum class AiStatus { READY, DOWNLOADING, PREPARING, FAILED }
 
 data class InventoryState(

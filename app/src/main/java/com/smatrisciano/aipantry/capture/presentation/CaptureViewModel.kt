@@ -33,7 +33,7 @@ class CaptureViewModel(
     private val _events = Channel<CaptureEvent>()
     val events = _events.receiveAsFlow()
 
-    /** Da quale scan (frigo/dispensa) proviene ogni ingrediente rilevato. */
+    /** Which scan (fridge/pantry) each detected ingredient comes from. */
     private val sourceByName = mutableMapOf<String, ScanTarget>()
 
     fun onAction(action: Interaction) {
@@ -43,7 +43,7 @@ class CaptureViewModel(
             is Interaction.OnScanAnotherClick -> onScanAnother()
             is Interaction.OnAddToPantryClick -> saveInventory()
             is Interaction.OnDetectionRemoved -> removeDetection(action.name)
-            // Retry = torna al preview live per scattare una nuova foto
+            // Retry = back to the live preview to take a new photo
             is Interaction.OnRetryClick -> _uiState.update {
                 it.copy(error = null, capturedPhoto = null, isAnalyzing = false)
             }
@@ -96,7 +96,7 @@ class CaptureViewModel(
                 capturedPhoto = null,
                 lastDetections = emptyList(),
                 error = null,
-                // dopo il frigo si passa automaticamente alla dispensa
+                // after the fridge, switch to the pantry automatically
                 target = if (state.target == ScanTarget.FRIDGE) ScanTarget.PANTRY else state.target
             )
         }

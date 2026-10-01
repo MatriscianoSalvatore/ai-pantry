@@ -62,7 +62,7 @@ class RecipesViewModel(
         }
     }
 
-    /** Istruzioni generate on-demand alla prima apertura della ricetta. */
+    /** Instructions generated on demand the first time the recipe is opened. */
     private fun loadDetails(index: Int) {
         val recipe = _uiState.value.recipes.getOrNull(index) ?: return
         if (recipe.steps.isNotEmpty() || _uiState.value.isDetailLoading) return

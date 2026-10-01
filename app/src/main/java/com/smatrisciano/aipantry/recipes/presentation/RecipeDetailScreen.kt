@@ -51,7 +51,7 @@ fun RecipeDetailScreenRoot(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val recipe = state.recipes.getOrNull(recipeIndex)
 
-    // Le istruzioni si generano on-demand alla prima apertura
+    // The instructions are generated on demand the first time the recipe is opened
     LaunchedEffect(recipeIndex) {
         viewModel.onAction(RecipesActions.Interaction.OnRecipeOpened(recipeIndex))
     }

@@ -39,10 +39,10 @@ android {
         buildConfig = true
     }
 
-    // Come viene consegnato il modello LLM (Gemma 4 E2B in entrambi i casi):
-    //  - play: AI pack via Play for On-device AI (chunk ≤1.5GB ricomposti)
-    //  - beta: modello embeddato nell'APK (~2.8GB) da distribuire a mano ai
-    //          tester (AGP vieta nomi flavor che iniziano con "test")
+    // How the LLM is delivered (Gemma 4 E2B in both cases):
+    //  - play: AI packs via Play for On-device AI (≤1.5 GB chunks, reassembled)
+    //  - beta: model embedded in the APK (~2.8 GB), handed out manually to
+    //          testers (AGP forbids flavor names starting with "test")
     flavorDimensions += "distribution"
     productFlavors {
         create("play") {
@@ -55,12 +55,12 @@ android {
             buildConfigField("String", "MODEL_SOURCE", "\"BUNDLED\"")
         }
     }
-    // I modelli non vanno compressi nell'APK: i runtime li mappano in memoria
+    // Models must not be compressed in the APK: the runtimes memory-map them
     androidResources {
         noCompress += listOf("litertlm", "tflite")
     }
 
-    // Play for On-device AI: il modello LLM viaggia come AI pack via Play
+    // Play for On-device AI: the LLM travels as AI packs via Play
     assetPacks += listOf(":llm_pack_0", ":llm_pack_1", ":llm_pack_2")
 }
 
@@ -97,10 +97,10 @@ dependencies {
     implementation(libs.androidx.camera.view)
 
     implementation(libs.litertlm.android)
-    // Gemini Nano on-device via AICore (Prompt API): solo su device supportati,
-    // gating a runtime con checkStatus() — altrove si usa il detector CLIP
+    // Gemini Nano on-device via AICore (Prompt API): only on supported devices,
+    // gated at runtime with checkStatus(); elsewhere the CLIP detector is used
     implementation(libs.mlkit.genai.prompt)
-    // Runtime LiteRT per l'encoder MobileCLIP del detector zero-shot
+    // LiteRT runtime for the MobileCLIP encoder of the zero-shot detector
     implementation(libs.litert)
 
     implementation(libs.play.ai.delivery)

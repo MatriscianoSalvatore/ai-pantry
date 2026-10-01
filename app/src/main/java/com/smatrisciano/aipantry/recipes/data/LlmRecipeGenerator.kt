@@ -20,9 +20,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Generazione ricette on-device con il modello attivo (Gemma 4 E2B) via LiteRT-LM.
- * Due stadi per minimizzare i token generati: lista leggera subito,
- * istruzioni on-demand quando l'utente apre la ricetta.
+ * On-device recipe generation with the active model (Gemma 4 E2B) via LiteRT-LM.
+ * Two stages to minimise generated tokens: a light list right away,
+ * instructions on demand when the user opens the recipe.
  */
 class LlmRecipeGenerator(
     private val modelRepository: ModelRepository,
@@ -50,8 +50,8 @@ class LlmRecipeGenerator(
             RecipeJsonParser.parse(rawOutput)
         }
 
-        // I missing non li decide il modello (inaffidabile): tutto ciò che una
-        // ricetta usa e non è nell'inventario è, per definizione, da comprare
+        // Missing ingredients aren't decided by the model (unreliable): anything a
+        // recipe uses that isn't in the inventory is, by definition, to buy
         val available = ingredients.map { it.name.lowercase() }
         val normalized = recipes.map { recipe ->
             val (owned, toBuy) = recipe.usedIngredients.partition { used ->
@@ -64,8 +64,8 @@ class LlmRecipeGenerator(
             recipe.copy(usedIngredients = owned, missingIngredients = missing)
         }
 
-        // Le ricette per cui manca qualcosa vanno in fondo,
-        // a pari mancanze resta l'ordine di rilevanza del modello
+        // Recipes that are missing something go last; with the same number of
+        // missing items, the model's relevance order stays
         normalized.sortedBy { it.missingIngredients.size }
     }
 
@@ -84,13 +84,13 @@ class LlmRecipeGenerator(
     }
 
     /**
-     * Inferenza con due protezioni:
-     *  - watchdog: su un driver GPU degradato `sendMessage` può bloccarsi
-     *    per sempre (chiamata nativa non interrompibile). La eseguiamo in un job
-     *    separato e facciamo timeout sull'await: allo scadere si forza la CPU e
-     *    si ritenta, invece di lasciare la UI a caricare all'infinito;
-     *  - anti-corruzione: se il modello emette token spazzatura (<pad>,
-     *    <unused…>) si ricrea su CPU e si ritenta.
+     * Inference with two safeguards:
+     *  - watchdog: on a degraded GPU driver `sendMessage` can block forever
+     *    (non-interruptible native call). It runs in a separate job with a timeout
+     *    on the await: when it expires the CPU is forced and the call retried,
+     *    instead of leaving the UI loading forever;
+     *  - anti-corruption: if the model emits garbage tokens (<pad>, <unused…>),
+     *    it is recreated on CPU and the call retried.
      */
     private suspend fun generateChecked(
         model: com.smatrisciano.aipantry.core.data.ai.LlmModel,
@@ -99,19 +99,19 @@ class LlmRecipeGenerator(
     ): String {
         val file = modelRepository.modelFile(model)
 
-        // Il watchdog serve SOLO a smascherare l'hang della GPU: la CPU non si
-        // pianta mai, è solo lenta, quindi va lasciata completare senza limite
-        // (altrimenti una generazione CPU lunga verrebbe uccisa e ritentata).
+        // The watchdog ONLY exists to expose a GPU hang: the CPU never hangs, it's
+        // just slow, so it must be allowed to finish with no limit (otherwise a long
+        // CPU generation would be killed and retried).
         val rawOutput = if (engineHolder.currentBackendIsGpu()) {
-            // Job scollegato: se la GPU si pianta, il thread nativo resta bloccato
-            // (non killabile) ma la coroutine chiamante prosegue e recupera su CPU
+            // Detached job: if the GPU hangs, the native thread stays stuck (it can't be
+            // killed) but the calling coroutine moves on and recovers on CPU
             val generation = watchdogScope.async {
                 engineHolder.createConversation(model, file, temperature = 0.5, topK = 25, topP = 0.9, seed = seed).use { conversation ->
                     conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
                 }
             }
-            // Oltre all'hang, la GPU può fallire con eccezione immediata (es.
-            // OpenCL assente sull'emulatore): stessa sorte del timeout
+            // Besides hanging, the GPU can fail with an immediate exception (e.g.
+            // OpenCL missing on the emulator): same treatment as the timeout
             val result = try {
                 withTimeoutOrNull(GENERATION_TIMEOUT_MS) { generation.await() }
             } catch (e: CancellationException) {
@@ -143,8 +143,8 @@ class LlmRecipeGenerator(
     }
 
     /**
-     * Con un modello 1/2B l'output ogni tanto non rispetta il formato:
-     * si ritenta in silenzio prima di far arrivare l'errore alla UI.
+     * With a small (1-2B) model the output sometimes ignores the format:
+     * retry silently before the error reaches the UI.
      */
     private inline fun <T> withRetry(attempts: Int = MAX_ATTEMPTS, block: (attempt: Int) -> T): T {
         var lastError: Throwable? = null
@@ -160,9 +160,9 @@ class LlmRecipeGenerator(
     }
 
     /**
-     * A seed fisso l'output è deterministico (su CPU identico al bit): "Rigenera"
-     * e i retry ridarebbero sempre la stessa risposta. Ogni nuova richiesta dello
-     * stesso prompt usa quindi altri seed; la prima resta quella di sempre.
+     * With a fixed seed the output is deterministic (bit-identical on CPU):
+     * "Regenerate" and the retries would always give the same answer. So every new
+     * request for the same prompt uses other seeds; the first one stays as it was.
      */
     private val promptRounds = mutableMapOf<String, Int>()
 
@@ -172,14 +172,14 @@ class LlmRecipeGenerator(
         round
     }
 
-    // Parte da 1: per il runtime seed 0 e seed 1 danno lo stesso output
+    // Starts at 1: for the runtime, seed 0 and seed 1 give the same output
     private fun seedFor(round: Int, attempt: Int): Int = 1 + round * MAX_ATTEMPTS + attempt
 
-    // Chiavi JSON e valori di difficulty restano in inglese in entrambe le
-    // lingue: sono il contratto col parser, si traducono solo i contenuti
+    // JSON keys and difficulty values stay in English in both languages: they
+    // are the contract with the parser, only the contents are translated
     private fun buildListPrompt(ingredients: List<Ingredient>, language: AppLanguage): String {
         val names = ingredients.joinToString(", ") { it.name }
-        // Prompt breve: meno token in input = meno prefill = più veloce su CPU
+        // Short prompt: fewer input tokens = less prefill = faster on CPU
         return when (language) {
             AppLanguage.EN -> """
                 Ingredients: $names.
@@ -187,9 +187,9 @@ class LlmRecipeGenerator(
                 {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[names]}
                 No text, no amounts, no steps.
             """
-            // Senza la regola sul titolo Gemma lo compone elencando gli ingredienti
-            // ("Risotto ai funghi e riso" in metà dei casi). Più spinta creativa
-            // ("piatti non banali", "almeno uno al forno") fa inventare ingredienti
+            // Without the title rule Gemma builds the title by listing the ingredients
+            // ("Risotto ai funghi e riso" half of the time). Pushing for more creativity
+            // ("piatti non banali", "almeno uno al forno") makes it invent ingredients
             AppLanguage.IT -> """
                 Ingredienti: $names.
                 Proponi 4 ricette diverse tra loro (primi, secondi, contorni).
@@ -203,8 +203,8 @@ class LlmRecipeGenerator(
 
     private fun buildDetailsPrompt(recipe: Recipe, language: AppLanguage): String {
         val names = (recipe.usedIngredients + recipe.missingIngredients).joinToString { it.name }
-        // Descrizioni dei campi (non valori di esempio: il 1B li copierebbe pari
-        // pari). Metric only. Corto ma con schema chiaro.
+        // Field descriptions, not example values (a small model would copy them
+        // verbatim). Metric only. Short but with a clear schema.
         return when (language) {
             AppLanguage.EN -> """
                 Recipe: "${recipe.title}". Ingredients: $names.
@@ -231,11 +231,11 @@ class LlmRecipeGenerator(
         }.trimIndent()
     }
 
-    /** Match a parola intera: "pepe" non deve coprire "peperoni", né "sale" "salame". */
+    /** Whole-word match: "pepe" must not cover "peperoni", nor "sale" "salame". */
     private fun isPantryStaple(name: String): Boolean =
         PANTRY_STAPLES.any { Regex("\\b${Regex.escape(it)}\\b").containsMatchIn(name) }
 
-    /** "2 tbsp Olive Oil" / "2 cucchiai d'olio" → "olive oil" / "olio": via quantità e unità. */
+    /** "2 tbsp Olive Oil" / "2 cucchiai d'olio" → "olive oil" / "olio": strips quantity and unit. */
     private fun normalizeIngredientName(raw: String): String =
         raw.lowercase()
             .replace(Regex("""^[\d\s/.,½¼¾()-]+"""), "")
@@ -248,23 +248,23 @@ class LlmRecipeGenerator(
             )
             .trim()
 
-    // Scope scollegato per il watchdog: i job che vi girano possono restare
-    // bloccati su una chiamata GPU nativa senza trascinarsi la coroutine chiamante
+    // Detached scope for the watchdog: its jobs can stay stuck on a native GPU
+    // call without dragging the calling coroutine along
     private val watchdogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private companion object {
         const val TAG = "LlmRecipeGenerator"
         const val MAX_ATTEMPTS = 4
 
-        // Oltre questo tempo la generazione è considerata bloccata (GPU degradata):
-        // si forza la CPU e si ritenta
+        // Beyond this time the generation is considered stuck (degraded GPU):
+        // the CPU is forced and the call retried
         const val GENERATION_TIMEOUT_MS = 75_000L
 
         val garbageMarkers = listOf("<unused", "<pad>", "<unk>")
 
-        // Dispensa di base sempre disponibile (come da prompt): mai "da comprare".
-        // Entrambe le lingue insieme: l'inventario può mescolarle se l'utente
-        // ha cambiato lingua tra una scansione e l'altra
+        // Basic pantry always available (as per the prompt): never "to buy".
+        // Both languages together: the inventory can mix them if the user changed
+        // language between one scan and the next
         val PANTRY_STAPLES = setOf(
             "water", "salt", "pepper", "olive oil", "oil",
             "sugar", "flour", "bread", "butter", "vinegar",

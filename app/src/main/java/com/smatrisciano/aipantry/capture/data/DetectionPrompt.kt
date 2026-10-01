@@ -4,14 +4,14 @@ import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.core.domain.AppLanguage
 
 /**
- * Prompt di detection condiviso dai detector generativi (Gemini Nano, Gemma
- * vision). Le chiavi JSON restano in inglese in entrambe le lingue: sono il
- * contratto con [DetectionJsonParser], si traducono solo i nomi degli ingredienti.
+ * Detection prompt shared by the generative detectors (Gemini Nano, Gemma
+ * vision). JSON keys stay in English in both languages: they are the contract
+ * with [DetectionJsonParser], only the ingredient names are translated.
  */
 object DetectionPrompt {
 
-    // Niente campo confidence nell'output: il parser ha già un default e
-    // ogni campo in più sono token di decode che l'utente aspetta
+    // No confidence field in the output: the parser already has a default, and
+    // every extra field means decode tokens the user waits for
     fun build(target: ScanTarget, language: AppLanguage = AppLanguage.current()): String =
         when (language) {
             AppLanguage.EN -> {

@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Nessun permesso INTERNET: il modello arriva via Google Play (AI pack),
-         l'inferenza è 100% on-device -->
+    <!-- No INTERNET permission here (the merged manifest gets one from ML Kit's
+         telemetry): models arrive via Google Play (AI packs) or inside the APK,
+         and inference is 100% on-device -->
     <uses-permission android:name="android.permission.CAMERA" />
 
     <uses-feature
@@ -17,7 +18,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AiPantry">
 
-        <!-- Librerie native opzionali per il backend GPU di LiteRT-LM -->
+        <!-- Optional native libraries for the LiteRT-LM GPU backend -->
         <uses-native-library
             android:name="libOpenCL.so"
             android:required="false" />

@@ -1,5 +1,5 @@
 <resources>
-    <!-- Comuni -->
+    <!-- Common -->
     <string name="back">Indietro</string>
     <string name="retry">Riprova</string>
     <string name="remove_ingredient">Rimuovi %1$s</string>
@@ -10,7 +10,7 @@
         <item quantity="other">%d ingredienti</item>
     </plurals>
 
-    <!-- Inventario -->
+    <!-- Inventory -->
     <string name="inventory_subtitle">Cucina con quello che hai in frigo · 100% on device</string>
     <string name="clear_all">Svuota tutto</string>
     <string name="section_fridge">🧊 Frigo</string>
@@ -25,7 +25,7 @@
     <string name="ai_status_preparing">Preparazione di %1$s…</string>
     <string name="ai_status_failed">Modello AI non disponibile: riavvia l\'app per riprovare</string>
 
-    <!-- Scansione -->
+    <!-- Scan -->
     <string name="captured_photo">Foto scattata</string>
     <plurals name="scan_session_count">
         <item quantity="one">%d ingrediente in questa scansione · tocca per rivederlo</item>
@@ -45,7 +45,7 @@
     <string name="error_no_ingredients">Nessun ingrediente riconosciuto in questa foto. Prova con uno scatto più ravvicinato.</string>
     <string name="error_detection_failed">Riconoscimento degli ingredienti non riuscito. Prova con un\'altra foto.</string>
 
-    <!-- Ricette -->
+    <!-- Recipes -->
     <string name="what_can_i_cook">Cosa posso cucinare?</string>
     <string name="regenerate">Rigenera</string>
     <string name="recipe_generation_failed">Generazione delle ricette non riuscita</string>
@@ -63,7 +63,7 @@
     <string name="difficulty_medium">Media</string>
     <string name="difficulty_hard">Difficile</string>
 
-    <!-- Dettaglio ricetta -->
+    <!-- Recipe detail -->
     <string name="ingredients_from_pantry">Ingredienti dalla tua dispensa</string>
     <string name="you_will_also_need">Ti servirà anche</string>
     <string name="instructions">Procedimento</string>

@@ -3,7 +3,7 @@ package com.smatrisciano.aipantry.recipes.domain
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 
-/** Avanzamento della generazione: la UI lo traduce nella lingua del device. */
+/** Generation progress: the UI translates it into the device language. */
 sealed interface GenerationProgress {
     data class LoadingModel(val modelName: String) : GenerationProgress
     data class Generating(val ingredientCount: Int) : GenerationProgress
@@ -11,18 +11,18 @@ sealed interface GenerationProgress {
 }
 
 interface RecipeGenerator {
-    /** Nome del motore mostrato in UI (es. "Gemma 4 E2B · LiteRT" / "Demo mode"). */
+    /** Engine name shown in the UI (e.g. "Gemma 4 E2B · LiteRT"). */
     val engineName: String
 
     /**
-     * Genera la lista delle ricette (senza istruzioni: tenerle fuori riduce
-     * i token da generare di ~4x e rende la lista quasi immediata).
+     * Generates the list of recipes (without instructions: leaving them out cuts
+     * the tokens to generate by ~4x and makes the list almost immediate).
      */
     suspend fun generate(
         ingredients: List<Ingredient>,
         onProgress: (GenerationProgress) -> Unit
     ): List<Recipe>
 
-    /** Completa una ricetta con istruzioni passo-passo e varianti (on-demand). */
+    /** Completes a recipe with step-by-step instructions and variants (on demand). */
     suspend fun generateDetails(recipe: Recipe, ingredients: List<Ingredient>): Recipe
 }

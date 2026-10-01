@@ -3,11 +3,11 @@ package com.smatrisciano.aipantry.core.domain
 import java.util.Locale
 
 /**
- * Lingua dei contenuti generati dall'app (prompt, nomi degli ingredienti,
- * ricette): italiano se il device è in italiano, inglese altrimenti — la
- * stessa regola con cui Android sceglie tra values/ e values-it/ per la UI.
- * Letta a ogni uso: se l'utente cambia lingua, la scansione o la ricetta
- * successiva la segue.
+ * Language of the content the app generates (prompts, ingredient names,
+ * recipes): Italian if the device is set to Italian, English otherwise, the
+ * same rule Android uses to choose between values/ and values-it/ for the UI.
+ * Read on every use: if the user changes language, the next scan or recipe
+ * follows it.
  */
 enum class AppLanguage {
     EN, IT;

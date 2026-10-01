@@ -8,10 +8,10 @@ import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import kotlinx.coroutines.CancellationException
 
 /**
- * Sceglie il detector a ogni scansione: Gemini Nano (AICore) dove il device
- * lo supporta, altrimenti lo zero-shot CLIP — che fa anche da rete di
- * sicurezza se Nano fallisce a runtime. La scelta è per-scan e non persistita:
- * il modello Nano può diventare disponibile dopo un download in background.
+ * Picks the detector on every scan: Gemini Nano (AICore) where the device
+ * supports it, otherwise CLIP zero-shot, which is also the safety net if Nano
+ * fails at runtime. The choice is per scan and not persisted: the Nano model
+ * can become available after a background download.
  */
 class AdaptiveIngredientDetector(
     private val nano: NanoIngredientDetector,

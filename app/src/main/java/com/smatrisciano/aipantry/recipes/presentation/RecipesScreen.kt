@@ -209,8 +209,8 @@ private fun RecipeCard(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
-            // whySuitable è generato on-demand nel dettaglio: nella lista può
-            // essere vuoto, mostriamo invece gli ingredienti usati
+            // whySuitable is generated on demand in the detail screen: in the list it
+            // can be empty, so the used ingredients are shown instead
             val subtitle = recipe.whySuitable.ifBlank {
                 recipe.usedIngredients.joinToString { it.name }
             }

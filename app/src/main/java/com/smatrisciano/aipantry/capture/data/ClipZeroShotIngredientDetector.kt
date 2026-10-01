@@ -22,14 +22,14 @@ import kotlin.math.exp
 import kotlin.math.sqrt
 
 /**
- * Riconoscimento ingredienti zero-shot: l'image encoder MobileCLIP-S2 (LiteRT)
- * embedda crop della foto e li confronta via cosine similarity con gli
- * embedding testuali di ~200 ingredienti precomputati offline
- * (scripts/prepare_clip_assets.py) e bundlati come asset.
+ * Zero-shot ingredient recognition: the MobileCLIP-S2 image encoder (LiteRT)
+ * embeds crops of the photo and compares them by cosine similarity with the
+ * text embeddings of ~860 ingredients, precomputed offline
+ * (scripts/prepare_clip_assets.py) and bundled as an asset.
  *
- * Discriminativo, non generativo: centinaia di ms invece di minuti, e gira
- * ovunque (emulatore incluso) — è il fallback quando Gemini Nano/AICore non
- * c'è. Limite intrinseco: vocabolario chiuso e niente stima delle quantità.
+ * Discriminative, not generative: hundreds of ms instead of minutes, and it runs
+ * everywhere (emulator included). It is the fallback when Gemini Nano/AICore is
+ * missing. Inherent limits: closed vocabulary and no quantity estimate.
  */
 class ClipZeroShotIngredientDetector(private val context: Context) : IngredientDetector {
 
@@ -40,14 +40,14 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
         val dim: Int,
         val labels: List<String>,
         val embeddings: List<List<Float>>,
-        // I distrattori ("empty shelf", "plastic container"…) competono nel
-        // softmax assorbendo i crop senza cibo, ma non vanno mai nei risultati
+        // Distractors ("empty shelf", "plastic container", excluded snacks…) compete
+        // in the softmax and absorb crops, but never show up in the results
         val distractors: List<Boolean> = emptyList(),
-        // Nome mostrato in UI: più label specifiche ("lactose-free milk",
-        // "whole milk carton") possono confluire nello stesso nome ("milk")
+        // Name shown in the UI: several specific labels ("lactose-free milk",
+        // "whole milk carton") can merge into the same name ("milk")
         val display: List<String> = emptyList(),
-        // Gli stessi nomi in italiano (scripts/ingredient_names_it.txt): il
-        // matching resta sulle label inglesi, cambia solo il nome riportato
+        // The same names in Italian (scripts/ingredient_names_it.txt): matching
+        // stays on the English labels, only the reported name changes
         @SerialName("display_it") val displayIt: List<String> = emptyList()
     ) {
         fun displayName(i: Int, language: AppLanguage): String = when (language) {
@@ -62,29 +62,29 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
         )
     }
 
-    // L2-normalizzati già in export; matrice piatta per il prodotto scalare
+    // Already L2-normalised at export; flat matrix for the dot product
     private val labelMatrix: Array<FloatArray> by lazy {
         labelSpace.embeddings.map { it.toFloatArray() }.toTypedArray()
     }
 
-    // Il file mappato è condiviso: i pesi stanno in memoria una volta sola
-    // anche con più interpreter
+    // The mapped file is shared: the weights sit in memory only once, even
+    // with several interpreters
     private val modelBuffer by lazy {
         context.assets.openFd(MODEL_ASSET).use { fd ->
             fd.createInputStream().channel.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.declaredLength)
         }
     }
 
-    // Un Interpreter non è thread-safe: pool di istanze (pesi condivisi via
-    // mmap) per embeddare i crop in parallelo invece che in sequenza
+    // An Interpreter isn't thread-safe: a pool of instances (weights shared via
+    // mmap) embeds the crops in parallel instead of one after another
     private val interpreterPool: List<Interpreter> by lazy {
         List(POOL_SIZE) {
             Interpreter(modelBuffer, Interpreter.Options().apply { numThreads = THREADS_PER_INTERPRETER })
         }
     }
 
-    // L'input può essere NHWC (1,256,256,3) o NCHW (1,3,256,256) a seconda
-    // dell'export: si rileva una volta dalla shape del tensore
+    // The input can be NHWC (1,256,256,3) or NCHW (1,3,256,256) depending on
+    // the export: detected once from the tensor shape
     private val inputIsNchw: Boolean by lazy {
         interpreterPool.first().getInputTensor(0).shape()[1] == 3
     }
@@ -94,8 +94,8 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
             val start = System.currentTimeMillis()
             val bestScore = FloatArray(labelSpace.labels.size)
             val crops = generateCrops(bitmap)
-            // Round-robin dei crop sugli interpreter del pool, un worker per
-            // interpreter: parallelismo reale senza contendersi la stessa istanza
+            // Round-robin of the crops over the pool's interpreters, one worker per
+            // interpreter: real parallelism without contending for the same instance
             val perCropTops = interpreterPool.mapIndexed { worker, interpreter ->
                 async {
                     crops.filterIndexed { i, _ -> i % interpreterPool.size == worker }
@@ -103,9 +103,9 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
                 }
             }.awaitAll().flatten()
             for (probs in perCropTops) {
-                // Solo i migliori match del crop: in un crop affollato il
-                // softmax spalma la probabilità e i punteggi assoluti calano,
-                // ma i primi 3 restano segnale affidabile
+                // Only the crop's best matches: in a crowded crop the softmax spreads
+                // the probability and absolute scores drop, but the top 3 stay a
+                // reliable signal
                 val top = probs.indices.sortedByDescending { probs[it] }.take(TOP_PER_CROP)
                 if (Log.isLoggable(TAG, Log.DEBUG)) {
                     Log.d(TAG, "crop top: " + top.joinToString {
@@ -121,8 +121,8 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
             val language = AppLanguage.current()
             bestScore.indices
                 .filter { distractors.getOrElse(it) { false }.not() && bestScore[it] >= MIN_PROB }
-                // Label diverse con lo stesso display name (es. le varianti di
-                // latte) collassano in un risultato solo, col punteggio migliore
+                // Different labels with the same display name (e.g. the milk variants)
+                // collapse into a single result, with the best score
                 .groupBy { labelSpace.displayName(it, language) }
                 .map { (name, indices) -> name to indices.maxOf { bestScore[it] } }
                 .sortedByDescending { (_, score) -> score }
@@ -130,7 +130,7 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
                 .map { (name, score) ->
                     DetectedIngredient(
                         name = name.replaceFirstChar(Char::uppercase),
-                        // CLIP classifica, non conta: quantità di cortesia
+                        // CLIP classifies, it doesn't count: placeholder quantity
                         quantity = "1 pc",
                         confidence = score
                     )
@@ -138,10 +138,10 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
         }
 
     /**
-     * Crop quadrati multi-scala con ~50% di overlap: il frame intero schiaccia
-     * gli oggetti piccoli sotto la risoluzione utile dell'encoder (256px),
-     * quindi si scandaglia a due scale più fitte. L'ultima tile di ogni riga e
-     * colonna è agganciata al bordo per non perdere i margini della foto.
+     * Multi-scale square crops with 25% overlap: the full frame squeezes small
+     * objects below the encoder's useful resolution (256 px), so the photo is
+     * scanned at two finer scales. The last tile of each row and column is
+     * anchored to the edge so the photo's margins aren't lost.
      */
     private fun generateCrops(bitmap: Bitmap): List<Bitmap> {
         val minSide = minOf(bitmap.width, bitmap.height)
@@ -158,7 +158,7 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
         return crops
     }
 
-    /** Offset a passo fisso, con l'ultimo agganciato al bordo. */
+    /** Fixed-step offsets, with the last one anchored to the edge. */
     private fun edgeAnchoredSteps(extent: Int, side: Int, step: Int): List<Int> {
         if (side >= extent) return listOf(0)
         val offsets = (0..(extent - side) step step).toMutableList()
@@ -171,7 +171,7 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
         return Bitmap.createBitmap(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side)
     }
 
-    /** Preprocessing del training: 256x256 bilineare, RGB in [0,1], nessuna normalizzazione. */
+    /** Training preprocessing: 256x256 bilinear, RGB in [0,1], no normalisation. */
     private fun embed(interpreter: Interpreter, crop: Bitmap): FloatArray {
         val scaled = Bitmap.createScaledBitmap(crop, INPUT_SIZE, INPUT_SIZE, true)
         val pixels = IntArray(INPUT_SIZE * INPUT_SIZE)
@@ -207,7 +207,7 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
         return v
     }
 
-    /** Softmax sulle similarity scalate con la logit scale standard CLIP (100). */
+    /** Softmax over the similarities scaled by the standard CLIP logit scale (100). */
     private fun softmaxOverLabels(embedding: FloatArray): FloatArray {
         val logits = FloatArray(labelMatrix.size)
         for (i in labelMatrix.indices) {
@@ -233,14 +233,15 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
         const val INPUT_SIZE = 256
         const val LOGIT_SCALE = 100f
 
-        // Sotto questa probabilità (softmax su ~550 label) il match è rumore.
-        // Richiesta esplicita: scartare tutto ciò che sta sotto il 22%
+        // Below this probability (softmax over ~880 labels) a match is noise.
+        // Explicit requirement: discard everything below 22%
         const val MIN_PROB = 0.22f
         const val MAX_RESULTS = 15
         const val TOP_PER_CROP = 3
 
-        // Frazioni del lato corto della foto, a misura di oggetto (non di
-        // scena): con overlap 25% ≈ 30 crop, smaltiti in parallelo dal pool
+        // Fractions of the photo's short side, sized for objects (not for the
+        // scene): with 25% overlap ≈ 36 crops on a 4:3 photo, processed in parallel by
+        // the pool
         val CROP_SCALES = floatArrayOf(0.5f, 0.33f)
 
         val POOL_SIZE = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)

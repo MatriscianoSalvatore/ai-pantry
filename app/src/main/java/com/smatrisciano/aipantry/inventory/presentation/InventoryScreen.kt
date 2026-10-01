@@ -132,7 +132,7 @@ private fun InventoryScreen(
                         }
                     }
                 }
-                // Scan e ricette sulla stessa riga: niente FAB che copre il bottone
+                // Scan and recipes on the same row: no FAB covering the button
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -143,7 +143,6 @@ private fun InventoryScreen(
                 ) {
                     Button(
                         onClick = { onAction(Navigation.GoToRecipes) },
-                        // Senza fallback demo le ricette esistono solo col modello pronto
                         enabled = state.isAiReady,
                         modifier = Modifier.weight(1f)
                     ) {

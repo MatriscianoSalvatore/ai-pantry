@@ -2,25 +2,25 @@ package com.smatrisciano.aipantry.core.data.ai
 
 import com.smatrisciano.aipantry.BuildConfig
 
-/** Come arriva il modello sul device — mai con download HTTP in-app. */
+/** How the model reaches the device: never with an in-app HTTP download. */
 sealed interface ModelSource {
 
     /**
-     * AI pack di Play for On-device AI (flavor `play`): chunk ≤1.5GB
-     * consegnati da Google Play e ricomposti al primo avvio.
+     * Play for On-device AI packs (`play` flavor): ≤1.5 GB chunks delivered
+     * by Google Play and reassembled on first launch.
      */
     data class AiPacks(val packNames: List<String>) : ModelSource {
         /**
-         * Nome del chunk negli assets del pack: deve essere unico tra i pack
-         * (bundletool rifiuta entry omonime con contenuto diverso).
+         * Chunk name in the pack assets: it must be unique across packs
+         * (bundletool rejects same-name entries with different content).
          */
         fun chunkAssetName(packName: String): String = "model.part${packNames.indexOf(packName)}"
     }
 
     /**
-     * Modello embeddato negli assets dell'APK (flavor `beta`, APK distribuito
-     * a mano): zero setup, ricomposto in files al primo avvio. In chunk perché
-     * AGP non impacchetta asset singoli >2GB.
+     * Model embedded in the APK assets (`beta` flavor, APK handed out
+     * manually): zero setup, reassembled into files on first launch. Chunked
+     * because AGP doesn't package single assets >2 GB.
      */
     data class BundledAssets(val assetPaths: List<String>) : ModelSource
 }
@@ -38,11 +38,11 @@ data class LlmModel(
 object LlmCatalog {
 
     /**
-     * Stesso modello per tutti i flavor — cambia solo il canale di consegna,
-     * deciso dal flavor `distribution` via BuildConfig.
-     * Gemma 4 E2B int4, multimodale: un solo modello per **sia** detection
-     * ingredienti (vision modality) **sia** generazione ricette — approccio
-     * "solo Gemma", senza detector ausiliari.
+     * Same model for every flavor: only the delivery channel changes, decided
+     * by the `distribution` flavor via BuildConfig.
+     * Gemma 4 E2B, multimodal: it generates the recipes and can also recognise
+     * ingredients (vision modality), although detection uses Gemini Nano or
+     * MobileCLIP by default (see CaptureModule).
      */
     val gemma4E2B = LlmModel(
         id = "gemma-4-e2b",

@@ -114,7 +114,7 @@ private fun AiPantryNavHost() {
     }
 }
 
-/** ViewModel condiviso tra le destination dello stesso nav graph. */
+/** ViewModel shared by the destinations of the same nav graph. */
 @Composable
 private inline fun <reified T : ViewModel> NavBackStackEntry.sharedViewModel(
     navController: NavController

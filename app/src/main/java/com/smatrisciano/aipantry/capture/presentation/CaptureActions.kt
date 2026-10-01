@@ -13,10 +13,10 @@ sealed interface CaptureActions {
         data class OnDetectionRemoved(val name: String) : Interaction
         data object OnRetryClick : Interaction
 
-        /** Swipe-down della sheet risultati: la nasconde senza toccare il resto. */
+        /** Swipe-down on the results sheet: hides it without touching anything else. */
         data object OnResultsDismissed : Interaction
 
-        /** Riapre la sheet risultati (pill "N ingredients in this scan session"). */
+        /** Reopens the results sheet (the "N ingredients in this scan session" pill). */
         data object OnShowResultsClick : Interaction
     }
 

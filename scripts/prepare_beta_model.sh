@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Embedda Gemma 4 E2B (runtime LiteRT-LM) negli assets del flavor `beta` (APK
-# distribuito a mano ai tester). Stesso modello del flavor play, canale di
-# consegna diverso. In chunk perché AGP non impacchetta asset singoli >2GB.
+# Embeds Gemma 4 E2B (LiteRT-LM runtime) in the assets of the `beta` flavor (APK
+# handed out manually to testers). Same model as the play flavor, different
+# delivery channel. Chunked because AGP doesn't package single assets >2 GB.
 #
-# Uso: ./scripts/prepare_beta_model.sh path/to/gemma4-e2b-it.litertlm
+# Usage: ./scripts/prepare_beta_model.sh path/to/gemma-4-E2B-it.litertlm
 set -euo pipefail
 
 MODEL="${1:?Uso: $0 path/to/gemma4-e2b-it.litertlm}"

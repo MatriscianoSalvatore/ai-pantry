@@ -10,10 +10,10 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
 val captureModule = module {
-    // Detection: Gemini Nano dove c'è AICore, zero-shot CLIP altrove.
-    // Gemma (LlmVisionIngredientDetector) resta nel codice come terza via
-    // — utile per confronti — ma fuori dal percorso di default: minuti di
-    // inferenza quando finisce su CPU.
+    // Detection: Gemini Nano where AICore is available, CLIP zero-shot elsewhere.
+    // Gemma (LlmVisionIngredientDetector) stays in the code as a third route,
+    // useful for comparisons, but off the default path: minutes of inference
+    // when it ends up on CPU.
     single<IngredientDetector> {
         AdaptiveIngredientDetector(
             nano = NanoIngredientDetector(),

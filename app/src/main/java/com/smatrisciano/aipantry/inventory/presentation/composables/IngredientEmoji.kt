@@ -3,36 +3,35 @@ package com.smatrisciano.aipantry.inventory.presentation.composables
 import java.text.Normalizer
 
 /**
- * Emoji per un ingrediente: match per parole chiave sul nome, dalla più
- * specifica alla più generica — con un vocabolario di ~870 voci una mappa
- * esatta nome→emoji non è mantenibile. Fallback neutro 🍽️ solo per ciò che
- * non rientra in nessuna famiglia.
+ * Emoji for an ingredient: keyword match on the name, from the most specific
+ * to the most generic. With a vocabulary of ~870 entries an exact name→emoji
+ * map can't be maintained. Neutral 🍽️ fallback only for what fits no family.
  *
- * Chiavi in inglese e in italiano nello stesso gruppo: i nomi arrivano nella
- * lingua del device (detector, ricette di Gemma) e l'inventario può mescolarle.
+ * English and Italian keys in the same group: names arrive in the device
+ * language (detectors, Gemma's recipes) and the inventory can mix them.
  */
 fun ingredientEmoji(name: String): String {
-    // Senza accenti e con l'apostrofo dritto: "tè", "caffè", "d’oliva" diventano
-    // "te", "caffe", "d'oliva", così le chiavi restano ASCII (\b non tratta
-    // le lettere accentate come lettere su ogni runtime)
+    // No accents and a straight apostrophe: "tè", "caffè", "d’oliva" become
+    // "te", "caffe", "d'oliva", so the keys stay ASCII (\b doesn't treat
+    // accented letters as letters on every runtime)
     val n = Normalizer.normalize(name.lowercase(), Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "")
         .replace('’', '\'')
 
-    // Match su confini di parola: "ham" NON deve matchare "cHAMpagne"
+    // Word-boundary match: "ham" must NOT match "cHAMpagne"
     fun has(vararg keys: String) = keys.any { key ->
         Regex("\\b${Regex.escape(key)}").containsMatchIn(n)
     }
 
-    // Parola intera, per le chiavi corte che sono prefisso d'altro:
-    // "mela" non è "melanzane", "pepe" non è "peperoni", "pane" non è "panettone"
+    // Whole word, for short keys that are a prefix of something else:
+    // "mela" is not "melanzane", "pepe" is not "peperoni", "pane" is not "panettone"
     fun word(vararg keys: String) = keys.any { key ->
         Regex("\\b${Regex.escape(key)}\\b").containsMatchIn(n)
     }
 
     return when {
-        // Specifici prima delle famiglie: "strawberry jam" è 🫙, non 🍓,
-        // e "salad dressing" è una salsa, non un'insalata
+        // Specific before families: "strawberry jam" is 🫙, not 🍓,
+        // and "salad dressing" is a sauce, not a salad
         has("jam", "marmalade", "chutney", "curd", "spread", "nutella",
             "marmellat", "confettur", "crema spalmabile", "speculoos") -> "🫙"
         has("dressing", "vinaigrette", "condimento per insalat") -> "🥫"
@@ -41,7 +40,7 @@ fun ingredientEmoji(name: String): String {
         has("cornett") -> "🥐"
         has("pasta sfoglia", "pasta brise", "pasta frolla", "pasta fillo", "pasta phyllo") -> "🥐"
         has("pasta di zucchero") -> "🧁"
-        // "pasta di/d'…" è quasi sempre una pasta condimento, non pasta da cuocere
+        // "pasta di/d'…" is almost always a paste, not pasta to cook
         has("pasta d'acciughe", "pasta d'aglio", "pasta di miso", "pasta di gamberi", "pasta di zenzero",
             "pasta di curry", "pasta tom yum", "pasta di tamarindo", "pasta di wasabi", "pasta di sesamo",
             "pasta di peperoncino") -> "🥫"
@@ -59,7 +58,7 @@ fun ingredientEmoji(name: String): String {
         has("frozen", "surgelat", "congelat") -> "🧊"
         has("canned", "spam", "in scatola", "scatolett", "lattin") || word("can", "cans") -> "🥫"
 
-        // Latticini e uova
+        // Dairy and eggs
         has("milk", "kefir", "buttermilk", "cream", "custard", "pudding",
             "latte", "panna", "budino", "crema pasticcera", "latticello") -> "🥛"
         has("yogurt", "skyr", "quark") -> "🥣"
@@ -72,7 +71,7 @@ fun ingredientEmoji(name: String): String {
         has("butter", "margarine", "ghee", "burro", "margarina") -> "🧈"
         has("egg", "uov") -> "🥚"
 
-        // Frutta ("mela" solo parola intera: non deve coprire "melanzane")
+        // Fruit ("mela" as a whole word only: it must not cover "melanzane")
         has("watermelon", "anguria", "cocomer") -> "🍉"
         has("melon", "cantaloupe") -> "🍈"
         has("strawberr", "fragol") -> "🍓"
@@ -102,7 +101,7 @@ fun ingredientEmoji(name: String): String {
             "litchi", "frutto della passione", "carambola", "alchechengi", "frutto del drago",
             "melogran", "pitaya") -> "🥭"
 
-        // Verdure
+        // Vegetables
         has("tomato", "passata", "pomodor", "pelati", "datterini") -> "🍅"
         has("potato", "patat") || word("pure") -> "🥔"
         has("carrot", "carot") -> "🥕"
@@ -135,7 +134,7 @@ fun ingredientEmoji(name: String): String {
             word("pea", "peas", "ceci", "fave") -> "🫘"
         has("olive", "tapenade", "caper", "oliv", "capper", "cucunci") -> "🫒"
 
-        // Carne e pesce
+        // Meat and fish
         has("bacon", "pancetta", "guanciale", "lardo", "speck", "pork", "porchetta",
             "maiale", "lonza", "braciol") -> "🥓"
         has("ham", "prosciutto", "mortadella", "salami", "chorizo", "pepperoni", "bresaola",
@@ -163,7 +162,7 @@ fun ingredientEmoji(name: String): String {
         has("mussel", "clam", "oyster", "scallop", "seafood",
             "cozz", "vongol", "ostric", "capesant", "frutti di mare", "misto mare") -> "🦪"
 
-        // Carboidrati
+        // Carbs
         has("spaghetti", "linguine", "tagliatelle", "bucatini", "angel hair", "noodle",
             "ramen", "vermicelli",
             "spaghett", "linguin", "tagliatell", "bucatin", "capellini", "capelli d'angelo",
@@ -190,7 +189,7 @@ fun ingredientEmoji(name: String): String {
             "farin", "semol", "cuscus", "orzo", "grano saraceno", "miglio", "avena",
             "cereali", "crusca", "corn flakes", "porridge") -> "🌾"
 
-        // Dolci e snack
+        // Sweets and snacks
         has("chocolate", "cocoa", "brownie", "cioccolat", "cacao") -> "🍫"
         has("cookie", "biscotti", "shortbread", "wafer", "ladyfinger",
             "biscott", "frollin", "savoiard", "amarett", "cantucci") -> "🍪"
@@ -210,7 +209,7 @@ fun ingredientEmoji(name: String): String {
             "mandorl", "arachid", "anacardi", "pistacchi", "nocciol", "pinoli",
             "frutta secca") || word("noci", "noce", "semi") -> "🥜"
 
-        // Bevande
+        // Drinks
         has("coffee", "espresso", "caffe") -> "☕"
         has("tea", "matcha", "chamomile", "rooibos", "kombucha", "tisan", "camomill") ||
             word("te") -> "🍵"
@@ -222,7 +221,7 @@ fun ingredientEmoji(name: String): String {
             "energy drink", "protein shake", "shake",
             "acqua", "bibit", "aranciata", "gassos", "chinotto") -> "🥤"
 
-        // Condimenti e dispensa
+        // Condiments and pantry
         has("oil", "olio") -> "🫗"
         has("vinegar", "dressing", "vinaigrette", "mayo", "aioli", "ketchup", "mustard",
             "sauce", "pesto", "salsa", "tahini", "miso", "gochujang", "harissa", "paste",

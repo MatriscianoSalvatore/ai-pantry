@@ -41,10 +41,11 @@ class LlmRecipeGenerator(
         engineHolder.acquire(model, modelRepository.modelFile(model))
 
         onProgress(GenerationProgress.Generating(ingredients.size))
-        val language = AppLanguage.current()
+        val prompt = buildListPrompt(ingredients, AppLanguage.current())
+        val round = nextRound(prompt)
         val recipes = withRetry { attempt ->
             if (attempt > 0) onProgress(GenerationProgress.Retrying)
-            val rawOutput = generateChecked(model, buildListPrompt(ingredients, language))
+            val rawOutput = generateChecked(model, prompt, seedFor(round, attempt))
             Log.d(TAG, "raw list output: $rawOutput")
             RecipeJsonParser.parse(rawOutput)
         }
@@ -73,8 +74,10 @@ class LlmRecipeGenerator(
         ingredients: List<Ingredient>
     ): Recipe = withContext(Dispatchers.Default) {
         val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
-        withRetry {
-            val rawOutput = generateChecked(model, buildDetailsPrompt(recipe, AppLanguage.current()))
+        val prompt = buildDetailsPrompt(recipe, AppLanguage.current())
+        val round = nextRound(prompt)
+        withRetry { attempt ->
+            val rawOutput = generateChecked(model, prompt, seedFor(round, attempt))
             Log.d(TAG, "raw details output: $rawOutput")
             RecipeJsonParser.parseDetails(recipe, rawOutput)
         }
@@ -91,7 +94,8 @@ class LlmRecipeGenerator(
      */
     private suspend fun generateChecked(
         model: com.smatrisciano.aipantry.core.data.ai.LlmModel,
-        prompt: String
+        prompt: String,
+        seed: Int
     ): String {
         val file = modelRepository.modelFile(model)
 
@@ -102,7 +106,7 @@ class LlmRecipeGenerator(
             // Job scollegato: se la GPU si pianta, il thread nativo resta bloccato
             // (non killabile) ma la coroutine chiamante prosegue e recupera su CPU
             val generation = watchdogScope.async {
-                engineHolder.createConversation(model, file, temperature = 0.5, topK = 25, topP = 0.9).use { conversation ->
+                engineHolder.createConversation(model, file, temperature = 0.5, topK = 25, topP = 0.9, seed = seed).use { conversation ->
                     conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
                 }
             }
@@ -123,7 +127,7 @@ class LlmRecipeGenerator(
                 error("Generation failed on GPU, retrying")
             }
         } else {
-            engineHolder.createConversation(model, file, temperature = 0.5, topK = 40, topP = 0.9).use { conversation ->
+            engineHolder.createConversation(model, file, temperature = 0.5, topK = 40, topP = 0.9, seed = seed).use { conversation ->
                 conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
             }
         }
@@ -142,7 +146,7 @@ class LlmRecipeGenerator(
      * Con un modello 1/2B l'output ogni tanto non rispetta il formato:
      * si ritenta in silenzio prima di far arrivare l'errore alla UI.
      */
-    private inline fun <T> withRetry(attempts: Int = 4, block: (attempt: Int) -> T): T {
+    private inline fun <T> withRetry(attempts: Int = MAX_ATTEMPTS, block: (attempt: Int) -> T): T {
         var lastError: Throwable? = null
         repeat(attempts) { attempt ->
             try {
@@ -154,6 +158,22 @@ class LlmRecipeGenerator(
         }
         throw requireNotNull(lastError)
     }
+
+    /**
+     * A seed fisso l'output è deterministico (su CPU identico al bit): "Rigenera"
+     * e i retry ridarebbero sempre la stessa risposta. Ogni nuova richiesta dello
+     * stesso prompt usa quindi altri seed; la prima resta quella di sempre.
+     */
+    private val promptRounds = mutableMapOf<String, Int>()
+
+    private fun nextRound(prompt: String): Int = synchronized(promptRounds) {
+        val round = promptRounds.getOrDefault(prompt, 0)
+        promptRounds[prompt] = round + 1
+        round
+    }
+
+    // Parte da 1: per il runtime seed 0 e seed 1 danno lo stesso output
+    private fun seedFor(round: Int, attempt: Int): Int = 1 + round * MAX_ATTEMPTS + attempt
 
     // Chiavi JSON e valori di difficulty restano in inglese in entrambe le
     // lingue: sono il contratto col parser, si traducono solo i contenuti
@@ -167,9 +187,14 @@ class LlmRecipeGenerator(
                 {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[names]}
                 No text, no amounts, no steps.
             """
+            // Senza la regola sul titolo Gemma lo compone elencando gli ingredienti
+            // ("Risotto ai funghi e riso" in metà dei casi). Più spinta creativa
+            // ("piatti non banali", "almeno uno al forno") fa inventare ingredienti
             AppLanguage.IT -> """
                 Ingredienti: $names.
-                Rispondi SOLO con un array JSON di 4 ricette, ognuna esattamente:
+                Proponi 4 ricette diverse tra loro (primi, secondi, contorni).
+                Il titolo è il nome del piatto come in un ricettario, con la sola iniziale maiuscola: non elencare ingredienti che il nome già implica (come il riso in un risotto).
+                Rispondi SOLO con un array JSON, ogni ricetta esattamente:
                 {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[nomi]}
                 Titoli e ingredienti in italiano. Niente testo, niente quantità, niente passaggi.
             """
@@ -229,6 +254,7 @@ class LlmRecipeGenerator(
 
     private companion object {
         const val TAG = "LlmRecipeGenerator"
+        const val MAX_ATTEMPTS = 4
 
         // Oltre questo tempo la generazione è considerata bloccata (GPU degradata):
         // si forza la CPU e si ritenta

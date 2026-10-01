@@ -57,9 +57,9 @@ Every feature follows Clean Architecture + MVI (`data / domain / presentation`),
 
 **Gemini Nano** (devices supported by the ML Kit GenAI Prompt API: Pixel 9/10/11 series except the "a" models, Galaxy S26 and a few dozen other recent flagships; the Galaxy S25 has Nano only for the ready-made GenAI APIs, not for the Prompt API) — multimodal photo+text prompt via the ML Kit GenAI Prompt API (`com.google.mlkit:genai-prompt`, still in beta). Availability is a runtime question: `checkStatus()` on every use; if the model is downloadable the download starts in the background and the fallback is used meanwhile. Even when the status is `AVAILABLE`, AICore can refuse a request (per-app quota, inference allowed only for the app in the foreground), and Nano is not supported on devices with an unlocked bootloader nor on the emulator: any Nano exception falls back to CLIP silently.
 
-**MobileCLIP-S2 zero-shot** (everywhere, Android 12+, the default included) — the image encoder (~140 MB, LiteRT) embeds multi-scale crops of the photo (a grid at 50% and 33% of the short side, pool of interpreters running in parallel) and compares them by cosine similarity against the text embeddings of **864 ingredients + 6 "distractor" labels** precomputed offline. The "classifier" is a text file:
+**MobileCLIP-S2 zero-shot** (everywhere, Android 12+, the default included) — the image encoder (~140 MB, LiteRT) embeds multi-scale crops of the photo (a grid at 50% and 33% of the short side, pool of interpreters running in parallel) and compares them by cosine similarity against the text embeddings of **864 ingredients + 12 "distractor" labels** precomputed offline. The "classifier" is a text file:
 
-- `scripts/ingredient_labels.txt` — one label per line; `label|display` syntax for aliases ("lactose-free milk|milk"), a `~` prefix for distractors (they absorb the food-free crops and are never reported)
+- `scripts/ingredient_labels.txt` — one label per line; `label|display` syntax for aliases ("lactose-free milk|milk"), a `~` prefix for distractors (they absorb the food-free crops, and foods that aren't recipe ingredients like snacks, and are never reported)
 - `scripts/prepare_clip_assets.py` — downloads the encoder from Hugging Face if missing (it is gitignored), computes the embeddings with open_clip (4 averaged templates) and writes `assets/clip/label_embeddings.json` (~4.5 MB); with `--verify-image` it checks open_clip ↔ TFLite parity (≥0.99 expected)
 
 Adding an ingredient = adding a line and re-running the script. Confidence threshold 22%, max 15 results per scan. CLIP classifies but does not count, so no quantity is shown in the app: the field survives in the data model (Nano does fill it in) but a placeholder count is worse than none. The vocabulary is closed: CLIP only recognises what is listed in the file.
@@ -95,19 +95,33 @@ Recipe generation retries automatically (up to 4 attempts in total) before surfa
 
 ## Getting started
 
-1. **Tools**: JDK 17+, Android SDK 36, Python 3 for the preparation scripts.
-2. **MobileCLIP encoder** (gitignored, ~137 MB). The label embeddings are already in the repo, but the script downloads the encoder and regenerates them:
+> ⚠️ **The models are not in the repo** (too big for git): steps 2 and 3 are required. If you skip them the build still succeeds — quickly, with a ~100 MB APK instead of ~2.9 GB — but the app shows "AI model unavailable" and, on phones without Gemini Nano (e.g. a Pixel 7), it cannot even scan the ingredients.
+
+1. **Tools**: JDK 17+, Android SDK 36 (Python 3 only if you use the CLIP preparation script).
+2. **MobileCLIP encoder** (gitignored, ~140 MB). The label embeddings are already in the repo, so downloading the encoder is enough:
+   ```bash
+   curl -L -o app/src/main/assets/clip/mobileclip_s2_image.tflite https://huggingface.co/plainhub/mobileclip-s2-tflite/resolve/main/mobileclip_s2_image.tflite
+   ```
+   Alternatively, the script downloads the encoder and also regenerates the embeddings (needed only when you change the vocabulary):
    ```bash
    pip install torch open_clip_torch ai-edge-litert pillow numpy
    python3 scripts/prepare_clip_assets.py
    ```
-3. **Gemma 4 E2B**: download `gemma-4-E2B-it.litertlm` from the Hugging Face link above, then pick a channel:
-   - `beta` flavor (everything inside the APK, simplest for a device): `./scripts/prepare_beta_model.sh path/to/gemma-4-E2B-it.litertlm`, then `./gradlew assembleBetaDebug`
+3. **Gemma 4 E2B** (~2.6 GB, Apache 2.0, no HF login needed):
+   ```bash
+   curl -L -o ~/Downloads/gemma-4-E2B-it.litertlm https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm
+   ```
+   then pick a channel:
+   - `beta` flavor (everything inside the APK, simplest for a device). The APK is ~2.9 GB: if the install fails with `INSTALL_FAILED_VERIFICATION_FAILURE`, see the install note below.
+     ```bash
+     ./scripts/prepare_beta_model.sh ~/Downloads/gemma-4-E2B-it.litertlm
+     ./gradlew assembleBetaDebug
+     ```
    - `play` flavor during development: build and run from Android Studio, then sideload the model with the name the app expects:
      ```bash
-     adb push gemma-4-E2B-it.litertlm /data/local/tmp/llm/gemma4-e2b-it.litertlm
+     adb push ~/Downloads/gemma-4-E2B-it.litertlm /data/local/tmp/llm/gemma4-e2b-it.litertlm
      ```
-4. Without Gemma the app still scans and builds the inventory (MobileCLIP or Nano); only the recipes need the LLM.
+4. Without Gemma the app still scans and builds the inventory (MobileCLIP, or Nano where available); only the recipes need the LLM. Without the MobileCLIP encoder, scanning works only on devices with Gemini Nano.
 
 ## Build & distribution
 

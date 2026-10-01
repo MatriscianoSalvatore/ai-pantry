@@ -1,10 +1,24 @@
-# Vocabolario ingredienti per la detection zero-shot (una voce per riga).
-# Usato da prepare_clip_assets.py per precomputare gli embedding testuali.
-# Nomi in inglese: coerenti con il resto della pipeline (prompt ricette inclusi).
+# Ingredient vocabulary for MobileCLIP zero-shot detection: one label per line.
+# prepare_clip_assets.py turns it into app/src/main/assets/clip/label_embeddings.json:
+# re-run the script after every change, the app only reads the JSON.
+#
+# - Labels in English: the text encoder was trained on English captions, and the
+#   recipe prompts are in English too. Exception: words printed on the package, which
+#   CLIP can read ("bottle of latte intero|milk", "aceto balsamico di modena").
+# - "label|display": matches the specific label, shows the simple name in the app and
+#   in the recipe prompts ("lactose-free milk|milk"). Visual labels ("jar of risotto
+#   rice", "bocconcini mozzarella") help CLIP; display names should be plain ingredients.
+# - Avoid near-synonyms of the same item: they split the softmax and can push each
+#   label below the confidence threshold (22%).
+# - Context helps small items ("eggs on a refrigerator shelf"), but too much context
+#   turns a label into a scene match ("eggs in a refrigerator" fires on every fridge
+#   crop): check that a new label scores only on crops that contain the item.
+# - Only lines starting with # are comments: no inline comments.
 
 # --- Dairy & eggs ---
 milk
 whole milk carton|milk
+bottle of latte intero|milk
 yogurt
 greek yogurt
 butter
@@ -13,15 +27,68 @@ cream
 sour cream
 cream cheese
 mozzarella
+bocconcini mozzarella|mozzarella
 parmesan cheese
+container of grated parmesan cheese|parmesan cheese
 cheddar cheese
 sliced cheese
-ricotta
+ricotta cheese tub|ricotta
 mascarpone
 eggs
 egg carton|eggs
+eggs on a refrigerator shelf|eggs
+buttermilk
+kefir
+whipped cream can|whipped cream
+condensed milk
+evaporated milk
+oat milk carton|oat milk
+almond milk carton|almond milk
+soy milk carton|soy milk
+lactose-free milk|milk
+creme fraiche
+custard
+vanilla pudding cup|vanilla pudding
+skim milk
+whole milk
+chocolate milk
+strawberry milk
+protein shake bottle|protein shake
+skyr
+fruit yogurt cups|fruit yogurt
+drinking yogurt
+plant-based yogurt
+vegan cheese slices
+cashew cheese
 
-# --- Produce: vegetables ---
+# --- Cheese ---
+brie
+camembert
+gouda
+edam
+emmental
+gruyere cheese
+feta cheese
+halloumi
+goat cheese
+blue cheese
+gorgonzola
+provolone
+pecorino
+burrata
+stracchino
+taleggio
+fontina
+cottage cheese
+quark
+paneer
+manchego
+swiss cheese slices
+string cheese
+grated cheese bag|grated cheese
+smoked scamorza
+
+# --- Vegetables ---
 tomatoes
 cherry tomatoes
 lettuce
@@ -54,6 +121,7 @@ pumpkin
 butternut squash
 mushrooms
 champignon mushrooms
+sliced white mushrooms in a plastic container|mushrooms
 asparagus
 artichoke
 fennel
@@ -70,211 +138,6 @@ fresh parsley
 fresh rosemary
 fresh mint
 fresh cilantro
-
-# --- Produce: fruit ---
-apples
-green apples
-bananas
-oranges
-lemons
-limes
-grapefruit
-strawberries
-blueberries
-raspberries
-blackberries
-grapes
-watermelon
-cantaloupe melon
-pineapple
-mango
-papaya
-kiwi
-peaches
-apricots
-plums
-pears
-cherries
-figs
-pomegranate
-
-# --- Meat & fish ---
-chicken breast
-whole chicken
-chicken thighs
-ground beef
-beef steak
-pork chops
-pork loin
-bacon
-ham
-prosciutto
-salami
-sausages
-hot dogs
-turkey slices
-lamb chops
-salmon fillet
-tuna steak
-white fish fillet
-shrimp
-mussels
-smoked salmon
-canned tuna
-canned sardines
-anchovies
-
-# --- Pantry staples ---
-pasta
-spaghetti
-penne pasta
-rice
-basmati rice
-risotto rice
-couscous
-quinoa
-bread
-sliced bread
-baguette
-tortilla wraps
-flour
-sugar
-brown sugar
-salt
-black pepper
-olive oil
-vegetable oil
-vinegar
-balsamic vinegar
-canned tomatoes
-tomato sauce
-tomato paste
-canned beans
-chickpeas
-lentils
-canned corn
-coconut milk
-broth cubes
-breadcrumbs
-polenta
-oats
-cornflakes
-granola
-cereal box|cereal
-crackers
-rice cakes
-peanut butter
-jam
-honey
-nutella
-chocolate spread
-maple syrup
-
-# --- Condiments & sauces ---
-ketchup
-mayonnaise
-mustard
-soy sauce
-hot sauce
-barbecue sauce
-pesto
-salsa
-hummus
-tahini
-worcestershire sauce
-fish sauce
-sriracha
-salad dressing
-pickles
-olives
-green olives
-capers
-sun-dried tomatoes
-
-# --- Beverages ---
-orange juice
-apple juice
-fruit juice carton|fruit juice
-sparkling water
-water bottle
-soda can|soda
-cola bottle|cola
-beer bottle|beer
-white wine bottle|white wine
-red wine bottle|red wine
-iced tea
-
-# --- Frozen & misc ---
-frozen peas
-frozen spinach
-frozen pizza
-ice cream
-frozen berries
-frozen french fries
-tofu
-tempeh
-seitan
-gnocchi
-fresh ravioli
-pizza dough
-puff pastry
-parmesan wedge
-protein bars
-dark chocolate
-chocolate bar
-cookies
-potato chips
-nuts
-almonds
-walnuts
-peanuts
-cashews
-raisins
-dried apricots
-dates
-
-# --- Formaggi ---
-brie
-camembert
-gouda
-edam
-emmental
-gruyere cheese
-feta cheese
-halloumi
-goat cheese
-blue cheese
-gorgonzola
-provolone
-pecorino
-burrata
-stracchino
-taleggio
-fontina
-cottage cheese
-quark
-paneer
-manchego
-swiss cheese slices
-string cheese
-grated cheese bag|grated cheese
-smoked scamorza
-
-# --- Latticini e uova: extra ---
-buttermilk
-kefir
-whipped cream can|whipped cream
-condensed milk
-evaporated milk
-oat milk carton|oat milk
-almond milk carton|almond milk
-soy milk carton|soy milk
-lactose-free milk|milk
-creme fraiche
-custard
-vanilla pudding cup|vanilla pudding
-
-# --- Verdure: extra ---
 romaine lettuce
 endive
 radicchio
@@ -312,6 +175,7 @@ alfalfa sprouts
 microgreens
 baby spinach bag|baby spinach
 mixed salad bag|mixed salad
+mixed salad leaves in a plastic container|mixed salad
 coleslaw mix
 shiitake mushrooms
 portobello mushroom
@@ -319,469 +183,6 @@ oyster mushrooms
 enoki mushrooms
 porcini mushrooms
 cherry radishes
-
-# --- Frutta: extra ---
-red apples
-clementines
-tangerines
-blood oranges
-pomelo
-kumquat
-nectarines
-honeydew melon
-cranberries
-gooseberries
-red currants
-black currants
-mulberries
-lychee
-dragon fruit
-passion fruit
-guava
-starfruit
-persimmon
-quince
-plantains
-coconut
-dried figs
-prunes
-apple sauce jar|apple sauce
-canned peaches
-canned pineapple
-
-# --- Erbe e spezie ---
-fresh thyme
-fresh oregano
-fresh sage
-fresh dill
-fresh chives
-fresh tarragon
-bay leaves
-lemongrass
-dried oregano
-paprika
-smoked paprika
-cumin
-turmeric
-curry powder
-garam masala
-cinnamon sticks
-nutmeg
-cloves
-cardamom pods
-star anise
-saffron
-vanilla extract
-chili flakes
-cayenne pepper
-white pepper
-fennel seeds
-mustard seeds
-sesame seeds
-poppy seeds
-zaatar
-
-# --- Carne e salumi: extra ---
-ground pork
-ground turkey
-chicken wings
-chicken drumsticks
-whole turkey
-duck breast
-veal cutlets
-beef roast
-brisket
-pork ribs
-pork belly
-pancetta
-guanciale
-mortadella
-bresaola
-chorizo
-pepperoni
-pastrami
-corned beef
-liver pate
-meatballs
-burger patties
-kebab meat
-
-# --- Pesce e frutti di mare: extra ---
-cod fillet
-halibut
-sea bass
-sea bream
-trout
-mackerel
-herring
-fresh sardines
-swordfish
-octopus
-squid
-calamari rings
-crab
-lobster
-scallops
-clams
-oysters
-prawns
-caviar
-surimi sticks
-fish fingers
-smoked mackerel
-pickled herring
-
-# --- Cereali, pasta e pane: extra ---
-fusilli pasta
-rigatoni pasta
-farfalle pasta
-linguine
-tagliatelle
-lasagna sheets
-orzo pasta
-macaroni
-egg noodles
-rice noodles
-soba noodles
-udon noodles
-ramen noodles
-whole wheat pasta
-brown rice
-jasmine rice
-wild rice
-sushi rice
-barley
-buckwheat
-bulgur
-millet
-farro
-semolina
-cornmeal
-whole wheat bread
-rye bread
-sourdough bread
-ciabatta
-focaccia
-pita bread
-naan bread
-bagels
-croissants
-brioche
-english muffins
-hamburger buns
-hot dog buns
-breadsticks
-
-# --- Scatolame e vasetti: extra ---
-canned lentils
-canned peas
-canned mushrooms
-canned artichokes
-roasted red peppers jar|roasted red peppers
-canned salmon
-canned mackerel
-baked beans
-refried beans
-black beans can
-kidney beans can
-white beans can
-sauerkraut jar|sauerkraut
-kimchi jar|kimchi
-pickled onions
-pickled jalapenos
-gherkins
-marinated artichokes
-passata bottle|passata
-ajvar jar|ajvar
-
-# --- Condimenti e salse: extra ---
-aioli
-tartar sauce
-ranch dressing
-caesar dressing
-vinaigrette
-teriyaki sauce
-hoisin sauce
-oyster sauce
-sweet chili sauce
-ponzu sauce
-miso paste
-gochujang
-harissa
-chimichurri
-tzatziki
-guacamole
-salsa verde
-cranberry sauce
-apple cider vinegar
-red wine vinegar
-rice vinegar
-sesame oil
-truffle oil
-coconut oil jar|coconut oil
-sunflower oil
-ghee
-
-# --- Per dolci e lievitati ---
-baking powder
-baking soda
-yeast packets
-powdered sugar
-cocoa powder
-chocolate chips
-sprinkles
-cornstarch
-almond flour
-coconut flour
-marzipan
-pie crust
-cake mix box|cake mix
-pancake mix
-
-# --- Bevande: extra ---
-lemonade bottle|lemonade
-energy drink can|energy drink
-tonic water
-ginger ale
-kombucha bottle|kombucha
-cold brew coffee bottle|cold brew coffee
-coconut water
-smoothie bottle|smoothie
-rose wine bottle|rose wine
-prosecco bottle|prosecco
-champagne bottle|champagne
-cider bottle|cider
-
-# --- Surgelati e pronti: extra ---
-frozen dumplings
-frozen chicken nuggets
-frozen waffles
-frozen broccoli
-frozen corn
-frozen mixed vegetables
-frozen shrimp
-popsicles
-sorbet
-frozen lasagna
-frozen burritos
-spring rolls
-samosas
-hash browns
-tater tots
-frozen garlic bread
-
-# --- Snack e frutta secca: extra ---
-pretzels
-microwave popcorn
-tortilla chips
-granola bars
-muesli
-rice pudding cup|rice pudding
-marshmallows
-candy bar
-wafer cookies
-biscotti
-shortbread
-brownies
-muffins
-donuts
-pistachios
-hazelnuts
-pecans
-macadamia nuts
-pine nuts
-sunflower seeds
-pumpkin seeds
-chia seeds
-flax seeds
-trail mix
-dried mango
-dried cranberries
-banana chips
-coconut flakes
-
-# --- Specialità italiane ed europee ---
-nduja
-speck
-coppa
-culatello
-lardo
-cotechino
-porchetta
-arancini
-caciocavallo
-asiago
-robiola
-crescenza
-buffalo mozzarella
-grana padano
-tiramisu
-panettone
-pandoro
-cannoli
-taralli
-piadina
-carasau bread
-orecchiette
-trofie
-paccheri
-bucatini
-cannelloni
-tortellini
-cappelletti
-agnolotti
-limoncello bottle|limoncello
-grappa bottle|grappa
-aperol bottle|aperol
-campari bottle|campari
-vermouth bottle|vermouth
-
-# --- Dispensa asiatica ---
-nori sheets
-wakame
-kombu
-dashi stock
-mirin
-sake bottle|sake
-rice paper wrappers
-wonton wrappers
-dumpling wrappers
-tofu puffs
-tempura flour
-panko breadcrumbs
-furikake
-wasabi paste
-pickled ginger
-chili oil
-black bean sauce
-sambal oelek
-red curry paste
-green curry paste
-tom yum paste
-coconut cream can|coconut cream
-palm sugar
-tamarind paste
-fish cake
-glass noodles
-wood ear mushrooms
-five spice powder
-sichuan peppercorns
-matcha powder
-instant noodles cup|instant noodles
-instant ramen packet|instant ramen
-
-# --- Dispensa messicana ---
-corn tortillas
-flour tortillas
-taco shells
-taco seasoning
-enchilada sauce
-mole sauce
-queso fresco
-cotija cheese
-pico de gallo
-chipotle peppers in adobo
-canned green chiles
-fajita seasoning
-churros
-
-# --- Mediorientale e mediterranea ---
-falafel
-labneh
-halva
-pita chips
-dolmas
-pearl couscous
-freekeh
-pomegranate molasses
-rose water
-orange blossom water
-dried chickpeas
-fava beans
-
-# --- Colazione e spalmabili ---
-almond butter
-cashew butter
-marmalade
-strawberry jam
-apricot jam
-blueberry jam
-lemon curd
-apple butter
-speculoos spread
-golden syrup
-agave syrup
-date syrup
-molasses
-instant oatmeal packets|instant oatmeal
-bran flakes
-puffed rice cereal
-chocolate cereal
-
-# --- Caffè e tè ---
-ground coffee
-coffee beans
-instant coffee jar|instant coffee
-espresso capsules
-decaf coffee
-black tea box|black tea
-green tea box|green tea
-herbal tea box|herbal tea
-chamomile tea
-earl grey tea
-rooibos tea
-hot chocolate powder
-
-# --- Latticini: terza ondata ---
-skim milk
-whole milk
-chocolate milk
-strawberry milk
-protein shake bottle|protein shake
-skyr
-fruit yogurt cups|fruit yogurt
-drinking yogurt
-plant-based yogurt
-vegan cheese slices
-cashew cheese
-
-# --- Carne e proteine: terza ondata ---
-turkey breast
-chicken liver
-beef liver
-oxtail
-lamb leg
-lamb shoulder
-rabbit meat
-venison
-quail
-quail eggs
-duck eggs
-blood sausage
-liverwurst
-spam can|spam
-canned chicken
-beef jerky
-biltong
-veggie burgers
-plant-based mince
-vegan nuggets
-soy chunks
-
-# --- Pesce: terza ondata ---
-tilapia fillet
-catfish
-monkfish
-red snapper
-eel
-smoked eel
-fish roe
-shrimp paste
-dried shrimp
-canned crab meat
-smoked trout
-
-# --- Verdure: terza ondata ---
 baby carrots
 rainbow carrots
 purple potatoes
@@ -816,7 +217,91 @@ shishito peppers
 banana peppers
 pepperoncini
 
-# --- Frutta: terza ondata ---
+# --- Herbs & spices ---
+fresh thyme
+fresh oregano
+fresh sage
+fresh dill
+fresh chives
+fresh tarragon
+bay leaves
+lemongrass
+dried oregano
+paprika
+smoked paprika
+cumin
+turmeric
+curry powder
+garam masala
+cinnamon sticks
+nutmeg
+cloves
+cardamom pods
+star anise
+saffron
+vanilla extract
+chili flakes
+cayenne pepper
+white pepper
+fennel seeds
+mustard seeds
+sesame seeds
+poppy seeds
+zaatar
+
+# --- Fruit ---
+apples
+green apples
+bananas
+oranges
+lemons
+limes
+grapefruit
+strawberries
+blueberries
+raspberries
+blackberries
+grapes
+watermelon
+cantaloupe melon
+pineapple
+mango
+papaya
+kiwi
+peaches
+apricots
+plums
+pears
+cherries
+figs
+pomegranate
+red apples
+clementines
+tangerines
+blood oranges
+pomelo
+kumquat
+nectarines
+honeydew melon
+cranberries
+gooseberries
+red currants
+black currants
+mulberries
+lychee
+dragon fruit
+passion fruit
+guava
+starfruit
+persimmon
+quince
+plantains
+coconut
+dried figs
+prunes
+apple sauce jar|apple sauce
+canned peaches
+canned pineapple
 green grapes
 red grapes
 golden kiwi
@@ -833,7 +318,368 @@ physalis
 jackfruit
 frozen acai packs|frozen acai
 
-# --- Dolci e pasticceria ---
+# --- Meat & cured meats ---
+chicken breast
+whole chicken
+chicken thighs
+ground beef
+beef steak
+pork chops
+pork loin
+bacon
+ham
+prosciutto
+salami
+sausages
+hot dogs
+turkey slices
+lamb chops
+ground pork
+ground turkey
+chicken wings
+chicken drumsticks
+whole turkey
+duck breast
+veal cutlets
+beef roast
+brisket
+pork ribs
+pork belly
+pancetta
+guanciale
+mortadella
+bresaola
+chorizo
+pepperoni
+pastrami
+corned beef
+liver pate
+meatballs
+burger patties
+kebab meat
+turkey breast
+chicken liver
+beef liver
+oxtail
+lamb leg
+lamb shoulder
+rabbit meat
+venison
+quail
+quail eggs
+duck eggs
+blood sausage
+liverwurst
+spam can|spam
+canned chicken
+beef jerky
+biltong
+veggie burgers
+plant-based mince
+vegan nuggets
+soy chunks
+
+# --- Fish & seafood ---
+salmon fillet
+tuna steak
+white fish fillet
+shrimp
+mussels
+smoked salmon
+canned tuna
+canned sardines
+anchovies
+cod fillet
+halibut
+sea bass
+sea bream
+trout
+mackerel
+herring
+fresh sardines
+swordfish
+octopus
+squid
+calamari rings
+crab
+lobster
+scallops
+clams
+oysters
+prawns
+caviar
+surimi sticks
+fish fingers
+smoked mackerel
+pickled herring
+tilapia fillet
+catfish
+monkfish
+red snapper
+eel
+smoked eel
+fish roe
+shrimp paste
+dried shrimp
+canned crab meat
+smoked trout
+
+# --- Pantry staples ---
+spaghetti
+spaghetti in a tall glass jar|spaghetti
+penne pasta
+penne rigate|penne pasta
+rice
+basmati rice
+risotto rice
+jar of risotto rice|risotto rice
+couscous
+quinoa
+bread
+sliced bread
+baguette
+tortilla wraps
+flour
+flour in a canister|flour
+sugar
+brown sugar
+salt
+black pepper
+olive oil
+bottles of olive oil and vinegar on a shelf|olive oil
+vegetable oil
+vinegar
+balsamic vinegar
+bottle of balsamic vinegar of modena|balsamic vinegar
+aceto balsamico di modena|balsamic vinegar
+canned tomatoes
+tomato sauce|passata
+tomato paste
+canned beans
+chickpeas
+lentils
+canned corn
+coconut milk
+broth cubes
+breadcrumbs
+polenta
+oats
+cornflakes
+cereal box|cereal
+rice cakes
+peanut butter
+jam
+honey
+nutella
+chocolate spread
+maple syrup
+vegetable broth carton|vegetable broth
+chicken broth carton|chicken broth
+beef broth carton|beef broth
+bone broth
+bouillon powder
+gravy granules
+stuffing mix
+instant mashed potatoes
+mac and cheese box|mac and cheese
+canned soup
+tomato soup can|tomato soup
+minestrone can|minestrone
+chili con carne can|chili con carne
+tapenade
+anchovy paste
+brown sauce
+relish
+horseradish sauce
+mint sauce
+mango chutney
+wasabi peas
+seaweed snacks
+protein powder tub|protein powder
+nutritional yeast
+
+# --- Pasta, grains & bread ---
+fusilli pasta
+bag of fusilli pasta|fusilli pasta
+rigatoni pasta
+farfalle pasta
+tagliatelle
+lasagna sheets
+macaroni
+egg noodles
+rice noodles
+soba noodles
+udon noodles
+ramen noodles
+brown rice
+jasmine rice
+wild rice
+sushi rice
+barley
+buckwheat
+bulgur
+millet
+jar of farro grains|farro
+semolina
+cornmeal
+whole wheat bread
+rye bread
+sourdough bread
+ciabatta
+focaccia
+pita bread
+naan bread
+croissants
+brioche
+english muffins
+hamburger buns
+hot dog buns
+breadsticks
+
+# --- Canned & jarred food ---
+canned lentils
+canned peas
+canned mushrooms
+canned artichokes
+roasted red peppers jar|roasted red peppers
+canned salmon
+canned mackerel
+baked beans
+refried beans
+black beans can
+kidney beans can
+white beans can
+sauerkraut jar|sauerkraut
+kimchi jar|kimchi
+pickled onions
+pickled jalapenos
+gherkins
+marinated artichokes
+passata bottle|passata
+ajvar jar|ajvar
+
+# --- Baking ---
+baking powder
+baking soda
+yeast packets
+powdered sugar
+cocoa powder
+chocolate chips
+sprinkles
+cornstarch
+almond flour
+coconut flour
+marzipan
+pie crust
+cake mix box|cake mix
+pancake mix
+
+# --- Condiments & sauces ---
+ketchup
+mayonnaise
+mayonnaise jar|mayonnaise
+mustard
+soy sauce
+hot sauce
+barbecue sauce
+pesto
+salsa
+hummus
+tahini
+fish sauce
+sriracha
+salad dressing
+pickles
+olives
+green olives
+capers
+sun-dried tomatoes
+aioli
+tartar sauce
+ranch dressing
+caesar dressing
+vinaigrette
+teriyaki sauce
+hoisin sauce
+oyster sauce
+sweet chili sauce
+ponzu sauce
+miso paste
+gochujang
+harissa
+chimichurri
+tzatziki
+guacamole
+salsa verde
+cranberry sauce
+apple cider vinegar
+red wine vinegar
+rice vinegar
+sesame oil
+truffle oil
+coconut oil jar|coconut oil
+sunflower oil
+ghee
+dijon mustard
+whole grain mustard
+honey mustard
+truffle paste
+garlic paste
+ginger paste
+caper berries
+cornichons
+preserved lemons
+
+# --- Breakfast & spreads ---
+almond butter
+cashew butter
+marmalade
+strawberry jam
+apricot jam
+blueberry jam
+lemon curd
+apple butter
+speculoos spread
+golden syrup
+agave syrup
+date syrup
+molasses
+instant oatmeal packets|instant oatmeal
+bran flakes
+puffed rice cereal
+chocolate cereal
+
+# --- Snacks, nuts & dried fruit ---
+pretzels
+microwave popcorn
+tortilla chips
+granola bars
+muesli
+rice pudding cup|rice pudding
+marshmallows
+candy bar
+wafer cookies
+biscotti
+shortbread
+brownies
+muffins
+donuts
+pistachios
+hazelnuts
+pecans
+macadamia nuts
+pine nuts
+sunflower seeds
+pumpkin seeds
+chia seeds
+flax seeds
+trail mix
+dried mango
+dried cranberries
+banana chips
+coconut flakes
+
+# --- Desserts & pastries ---
 pound cake
 sponge cake
 cheesecake
@@ -855,45 +701,48 @@ scones
 crumpets
 profiteroles
 
-# --- Dispensa: terza ondata ---
-vegetable broth carton|vegetable broth
-chicken broth carton|chicken broth
-beef broth carton|beef broth
-bone broth
-bouillon powder
-gravy granules
-stuffing mix
-instant mashed potatoes
-mac and cheese box|mac and cheese
-canned soup
-tomato soup can|tomato soup
-minestrone can|minestrone
-chili con carne can|chili con carne
-canned ravioli
-tapenade
-anchovy paste
-brown sauce
-relish
-horseradish sauce
-mint sauce
-mango chutney
-wasabi peas
-seaweed snacks
-protein powder tub|protein powder
-nutritional yeast
-
-# --- Condimenti: terza ondata ---
-dijon mustard
-whole grain mustard
-honey mustard
-truffle paste
-garlic paste
-ginger paste
-caper berries
-cornichons
-preserved lemons
-
-# --- Surgelati: terza ondata ---
+# --- Frozen, ready meals & misc ---
+frozen peas
+frozen spinach
+frozen pizza
+ice cream
+frozen berries
+frozen french fries
+tofu
+tempeh
+seitan
+gnocchi
+fresh ravioli
+pizza dough
+puff pastry
+parmesan wedge
+protein bars
+dark chocolate
+chocolate bar
+potato chips
+nuts
+almonds
+walnuts
+peanuts
+cashews
+raisins
+dried apricots
+dates
+frozen dumplings
+frozen chicken nuggets
+frozen waffles
+frozen broccoli
+frozen corn
+frozen shrimp
+popsicles
+sorbet
+frozen lasagna
+frozen burritos
+spring rolls
+samosas
+hash browns
+tater tots
+frozen garlic bread
 frozen blueberries
 frozen strawberries
 frozen mango chunks
@@ -903,19 +752,6 @@ frozen falafel
 frozen naan
 frozen pierogi
 frozen gyoza
-
-# --- Bevande: terza ondata ---
-rice milk carton|rice milk
-grapefruit juice
-cranberry juice
-tomato juice
-pomegranate juice
-grape juice
-ginger beer
-root beer
-coconut milk drink
-
-# --- Varie: terza ondata ---
 rotisserie chicken
 deli meat slices
 smoked ham
@@ -935,7 +771,6 @@ pumpkin puree can|pumpkin puree
 cherry pie filling
 custard powder
 angel hair pasta
-ditalini pasta
 pearl barley
 red lentils
 green lentils
@@ -944,13 +779,167 @@ mung beans
 black eyed peas
 adzuki beans
 
-# --- Distrattori (prefisso ~): assorbono i crop senza cibo riconoscibile
-# e non vengono mai riportati nei risultati. Devono descrivere contenuto
-# vuoto/illeggibile, MAI la scena ("refrigerator interior" vincerebbe ogni
-# crop di una foto di frigo per gist-matching) ---
+# --- Beverages ---
+orange juice
+apple juice
+fruit juice carton|fruit juice
+sparkling water
+water bottle
+soda can|soda
+cola bottle|cola
+beer bottle|beer
+white wine bottle|white wine
+red wine bottle|red wine
+iced tea
+lemonade bottle|lemonade
+energy drink can|energy drink
+tonic water
+ginger ale
+kombucha bottle|kombucha
+cold brew coffee bottle|cold brew coffee
+coconut water
+smoothie bottle|smoothie
+rose wine bottle|rose wine
+prosecco bottle|prosecco
+champagne bottle|champagne
+cider bottle|cider
+rice milk carton|rice milk
+grapefruit juice
+cranberry juice
+tomato juice
+pomegranate juice
+grape juice
+ginger beer
+root beer
+coconut milk drink
+
+# --- Coffee & tea ---
+ground coffee
+coffee beans
+instant coffee jar|instant coffee
+espresso capsules
+decaf coffee
+black tea box|black tea
+green tea box|green tea
+herbal tea box|herbal tea
+chamomile tea
+earl grey tea
+rooibos tea
+hot chocolate powder
+
+# --- Italian & European specialties ---
+nduja
+speck
+culatello
+lardo
+cotechino
+porchetta
+arancini
+caciocavallo
+asiago
+robiola
+crescenza
+buffalo mozzarella
+grana padano
+tiramisu
+panettone
+pandoro
+cannoli
+piadina
+carasau bread
+orecchiette
+trofie
+paccheri
+cannelloni
+tortellini
+cappelletti
+agnolotti
+limoncello bottle|limoncello
+grappa bottle|grappa
+aperol bottle|aperol
+campari bottle|campari
+vermouth bottle|vermouth
+
+# --- Asian pantry ---
+nori sheets
+wakame
+kombu
+dashi stock
+mirin
+sake bottle|sake
+rice paper wrappers
+wonton wrappers
+dumpling wrappers
+tofu puffs
+tempura flour
+panko breadcrumbs
+furikake
+wasabi paste
+pickled ginger
+chili oil
+black bean sauce
+sambal oelek
+red curry paste
+green curry paste
+tom yum paste
+coconut cream can|coconut cream
+palm sugar
+tamarind paste
+fish cake
+glass noodles
+wood ear mushrooms
+five spice powder
+sichuan peppercorns
+matcha powder
+instant noodles cup|instant noodles
+instant ramen packet|instant ramen
+
+# --- Mexican pantry ---
+corn tortillas
+flour tortillas
+taco shells
+taco seasoning
+enchilada sauce
+mole sauce
+queso fresco
+cotija cheese
+pico de gallo
+chipotle peppers in adobo
+canned green chiles
+fajita seasoning
+churros
+
+# --- Middle Eastern & Mediterranean ---
+falafel
+labneh
+halva
+pita chips
+dolmas
+pearl couscous
+freekeh
+pomegranate molasses
+rose water
+orange blossom water
+dried chickpeas
+fava beans
+
+# --- Distractors (~ prefix): they absorb crops with no recognisable food and are never
+# reported. They must describe empty or unreadable content, never the scene:
+# "refrigerator interior" would win every crop of a fridge photo. ---
 ~an empty shelf
 ~a plain flat surface
 ~a blurry out of focus photo
 ~an empty plastic food container
 ~crumpled plastic wrap
 ~aluminum foil
+
+# --- Excluded foods (~ prefix too): snacks and ready-made foods we don't want as recipe
+# ingredients. They stay in the vocabulary as distractors so their crops are absorbed:
+# deleting them would hand those crops to the closest real label (cookies -> bagels,
+# granola -> instant oatmeal). ---
+~granola
+~crackers
+~cookies
+~bag of italian biscuits
+~canned ravioli
+~bagels

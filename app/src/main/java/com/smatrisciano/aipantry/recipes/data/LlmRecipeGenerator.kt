@@ -99,7 +99,7 @@ class LlmRecipeGenerator(
             // Job scollegato: se la GPU si pianta, il thread nativo resta bloccato
             // (non killabile) ma la coroutine chiamante prosegue e recupera su CPU
             val generation = watchdogScope.async {
-                engineHolder.createConversation(model, file, temperature = 0.4, topK = 40).use { conversation ->
+                engineHolder.createConversation(model, file, temperature = 0.5, topK = 25, topP = 0.9).use { conversation ->
                     conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
                 }
             }
@@ -120,7 +120,7 @@ class LlmRecipeGenerator(
                 error("Generation failed on GPU, retrying")
             }
         } else {
-            engineHolder.createConversation(model, file, temperature = 0.4, topK = 40).use { conversation ->
+            engineHolder.createConversation(model, file, temperature = 0.5, topK = 40, topP = 0.9).use { conversation ->
                 conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
             }
         }
@@ -136,7 +136,7 @@ class LlmRecipeGenerator(
     }
 
     /**
-     * Con un modello 1B l'output ogni tanto non rispetta il formato:
+     * Con un modello 1/2B l'output ogni tanto non rispetta il formato:
      * si ritenta in silenzio prima di far arrivare l'errore alla UI.
      */
     private inline fun <T> withRetry(attempts: Int = 4, block: (attempt: Int) -> T): T {

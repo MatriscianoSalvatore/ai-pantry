@@ -96,7 +96,7 @@ class LlmEngineHolder(private val context: Context) {
         val probe = probeScope.async {
             // Prompt rappresentativo (genera qualche frase con i parametri reali):
             // una micro-generazione banale passerebbe anche su GPU rotta
-            createConversation(model, file, temperature = 0.4, topK = 40).use { conversation ->
+            createConversation(model, file, temperature = 0.5, topK = 40, topP = 0.9).use { conversation ->
                 conversation.sendMessage(Contents.of(Content.Text("List five common fruits, one per line.")))
             }
         }

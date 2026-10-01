@@ -34,10 +34,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.smatrisciano.aipantry.R
+import com.smatrisciano.aipantry.recipes.domain.GenerationProgress
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 import com.smatrisciano.aipantry.recipes.presentation.RecipesActions.Interaction
 import com.smatrisciano.aipantry.recipes.presentation.RecipesActions.Navigation
@@ -69,25 +73,24 @@ private fun RecipesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("What can I cook?") },
+                title = { Text(stringResource(R.string.what_can_i_cook)) },
                 navigationIcon = {
                     IconButton(onClick = { onAction(Navigation.GoBack) }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = {
                     if (!state.isGenerating) {
                         IconButton(onClick = { onAction(Interaction.OnRegenerateClick) }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Regenerate")
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.regenerate))
                         }
                     }
                 }
             )
         }
     ) { padding ->
-        if (state.error != null) {
+        if (state.generationFailed) {
             GenerationError(
-                message = state.error,
                 onRetry = { onAction(Interaction.OnRegenerateClick) },
                 modifier = Modifier
                     .fillMaxSize()
@@ -121,7 +124,6 @@ private fun RecipesScreen(
 
 @Composable
 private fun GenerationError(
-    message: String,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -131,20 +133,20 @@ private fun GenerationError(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Recipe generation failed",
+            text = stringResource(R.string.recipe_generation_failed),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = message,
+            text = stringResource(R.string.recipe_generation_failed_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = onRetry) {
-            Text("Retry")
+            Text(stringResource(R.string.retry))
         }
     }
 }
@@ -162,15 +164,24 @@ private fun GeneratingContent(
         CircularProgressIndicator()
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            text = "${state.engineName} · 100% on-device",
+            text = stringResource(R.string.generation_engine, state.engineName),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary
         )
         Spacer(modifier = Modifier.height(16.dp))
-        state.progressLog.forEach { line ->
+        state.progressLog.forEach { progress ->
             AnimatedVisibility(visible = true) {
                 Text(
-                    text = line,
+                    text = when (progress) {
+                        is GenerationProgress.LoadingModel ->
+                            stringResource(R.string.progress_loading_model, progress.modelName)
+                        is GenerationProgress.Generating -> pluralStringResource(
+                            R.plurals.progress_generating,
+                            progress.ingredientCount,
+                            progress.ingredientCount
+                        )
+                        GenerationProgress.Retrying -> stringResource(R.string.progress_retrying)
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 2.dp)
@@ -218,7 +229,7 @@ private fun RecipeCard(
             ) {
                 AssistChip(
                     onClick = onClick,
-                    label = { Text("${recipe.prepTimeMinutes} min") },
+                    label = { Text(stringResource(R.string.prep_time_minutes, recipe.prepTimeMinutes)) },
                     leadingIcon = {
                         Icon(
                             Icons.Default.Schedule,
@@ -230,7 +241,15 @@ private fun RecipeCard(
                 DifficultyBadge(difficulty = recipe.difficulty)
                 AssistChip(
                     onClick = onClick,
-                    label = { Text("${recipe.usedIngredients.size} ingredients") },
+                    label = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.ingredient_count,
+                                recipe.usedIngredients.size,
+                                recipe.usedIngredients.size
+                            )
+                        )
+                    },
                     leadingIcon = {
                         Icon(
                             Icons.Default.AutoAwesome,
@@ -243,7 +262,10 @@ private fun RecipeCard(
             if (recipe.missingIngredients.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "🛒 Missing: ${recipe.missingIngredients.joinToString { it.display }}",
+                    text = stringResource(
+                        R.string.missing_ingredients,
+                        recipe.missingIngredients.joinToString { it.display }
+                    ),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.secondary

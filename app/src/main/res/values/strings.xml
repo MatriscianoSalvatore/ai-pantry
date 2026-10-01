@@ -1,3 +1,75 @@
 <resources>
     <string name="app_name">AI Pantry</string>
+
+    <!-- Comuni -->
+    <string name="back">Back</string>
+    <string name="retry">Retry</string>
+    <string name="remove_ingredient">Remove %1$s</string>
+    <string name="fridge">Fridge</string>
+    <string name="pantry">Pantry</string>
+    <plurals name="ingredient_count">
+        <item quantity="one">%d ingredient</item>
+        <item quantity="other">%d ingredients</item>
+    </plurals>
+
+    <!-- Inventario -->
+    <string name="inventory_subtitle">Cook from your fridge · 100% on-device</string>
+    <string name="clear_all">Clear all</string>
+    <string name="section_fridge">🧊 Fridge</string>
+    <string name="section_pantry">🗄️ Pantry</string>
+    <string name="what_can_i_cook_count">What can I cook? (%1$d)</string>
+    <string name="scan">Scan</string>
+    <string name="empty_pantry_title">Your pantry is empty</string>
+    <string name="empty_pantry_body">Take a photo of your fridge and pantry.\nIngredients are detected on-device — photos never leave your phone.</string>
+    <string name="scan_my_fridge">Scan my fridge</string>
+    <string name="ai_status_ready">%1$s ready · on-device</string>
+    <string name="ai_status_downloading">Downloading %1$s…</string>
+    <string name="ai_status_preparing">Preparing %1$s…</string>
+    <string name="ai_status_failed">AI model unavailable — restart the app to retry</string>
+
+    <!-- Scansione -->
+    <string name="captured_photo">Captured photo</string>
+    <plurals name="scan_session_count">
+        <item quantity="one">%d ingredient in this scan session · tap to review</item>
+        <item quantity="other">%d ingredients in this scan session · tap to review</item>
+    </plurals>
+    <string name="pick_from_gallery">Pick from gallery</string>
+    <string name="detecting_ingredients">Detecting ingredients on-device…</string>
+    <string name="point_at_fridge">Point at your fridge and shoot</string>
+    <string name="point_at_pantry">Point at your pantry and shoot</string>
+    <string name="take_another_photo">Take another photo</string>
+    <string name="ingredients_detected">Ingredients detected</string>
+    <string name="detection_engine">Engine: %1$s · 100%% on-device</string>
+    <string name="scan_another">Scan another</string>
+    <string name="add_to_pantry_count">Add to pantry (%1$d)</string>
+    <string name="camera_permission_rationale">Camera access is needed to scan your fridge and pantry.\nPhotos never leave your device.</string>
+    <string name="grant_camera_access">Grant camera access</string>
+    <string name="error_no_ingredients">No ingredients recognized in this photo. Try a closer shot of a single ingredient.</string>
+    <string name="error_detection_failed">Ingredient detection failed. Try another photo.</string>
+
+    <!-- Ricette -->
+    <string name="what_can_i_cook">What can I cook?</string>
+    <string name="regenerate">Regenerate</string>
+    <string name="recipe_generation_failed">Recipe generation failed</string>
+    <string name="recipe_generation_failed_body">The on-device model didn\'t return valid recipes. Try again.</string>
+    <string name="generation_engine">%1$s · 100%% on-device</string>
+    <string name="progress_loading_model">Loading %1$s on-device…</string>
+    <plurals name="progress_generating">
+        <item quantity="one">Generating recipes with %d ingredient…</item>
+        <item quantity="other">Generating recipes with %d ingredients…</item>
+    </plurals>
+    <string name="progress_retrying">Output not parseable, retrying…</string>
+    <string name="prep_time_minutes">%1$d min</string>
+    <string name="missing_ingredients">🛒 Missing: %1$s</string>
+    <string name="difficulty_easy">Easy</string>
+    <string name="difficulty_medium">Medium</string>
+    <string name="difficulty_hard">Hard</string>
+
+    <!-- Dettaglio ricetta -->
+    <string name="ingredients_from_pantry">Ingredients from your pantry</string>
+    <string name="you_will_also_need">You\'ll also need</string>
+    <string name="instructions">Instructions</string>
+    <string name="writing_instructions">Writing the instructions on-device…</string>
+    <string name="instructions_failed">Couldn\'t generate the instructions</string>
+    <string name="variants">Variants</string>
 </resources>

@@ -14,6 +14,8 @@
 #   turns a label into a scene match ("eggs in a refrigerator" fires on every fridge
 #   crop): check that a new label scores only on crops that contain the item.
 # - Only lines starting with # are comments: no inline comments.
+# - Every display name needs its Italian name in ingredient_names_it.txt (shown when the
+#   device language is Italian): the script stops if one is missing.
 
 # --- Dairy & eggs ---
 milk

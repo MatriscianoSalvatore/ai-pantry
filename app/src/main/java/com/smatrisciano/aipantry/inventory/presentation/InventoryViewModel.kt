@@ -27,14 +27,13 @@ class InventoryViewModel(
         InventoryState(
             fridgeItems = ingredients.filter { it.source == IngredientSource.FRIDGE },
             pantryItems = ingredients.filter { it.source != IngredientSource.FRIDGE },
-            isAiReady = status == ModelStatus.Ready,
-            aiStatusLabel = when (status) {
-                ModelStatus.Ready -> "${activeModel.displayName} ready · on-device"
-                is ModelStatus.Downloading -> "Downloading ${activeModel.displayName}…"
-                ModelStatus.Assembling -> "Preparing ${activeModel.displayName}…"
-                is ModelStatus.Failed -> "AI model unavailable — restart the app to retry"
-                else -> "Preparing ${activeModel.displayName}…"
-            }
+            aiStatus = when (status) {
+                ModelStatus.Ready -> AiStatus.READY
+                is ModelStatus.Downloading -> AiStatus.DOWNLOADING
+                is ModelStatus.Failed -> AiStatus.FAILED
+                else -> AiStatus.PREPARING
+            },
+            modelName = activeModel.displayName
         )
     }.stateIn(
         scope = viewModelScope,

@@ -8,15 +8,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.smatrisciano.aipantry.R
 import com.smatrisciano.aipantry.recipes.domain.models.Difficulty
 
 @Composable
 fun DifficultyBadge(difficulty: Difficulty) {
     val (label, color) = when (difficulty) {
-        Difficulty.EASY -> "Easy" to Color(0xFF4CAF50)
-        Difficulty.MEDIUM -> "Medium" to Color(0xFFFF9800)
-        Difficulty.HARD -> "Hard" to Color(0xFFF44336)
+        Difficulty.EASY -> stringResource(R.string.difficulty_easy) to Color(0xFF4CAF50)
+        Difficulty.MEDIUM -> stringResource(R.string.difficulty_medium) to Color(0xFFFF9800)
+        Difficulty.HARD -> stringResource(R.string.difficulty_hard) to Color(0xFFF44336)
     }
     Surface(
         shape = RoundedCornerShape(8.dp),

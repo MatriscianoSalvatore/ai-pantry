@@ -27,6 +27,8 @@ The lesson: before asking how to make a model faster, ask whether it is the righ
 2. The detected ingredients land in the local inventory (Room). With MobileCLIP each one has a confidence and anything below 22% is discarded; Gemini Nano returns no confidence, so its results show a fixed default.
 3. **What can I cook?** → the LLM generates 4 recipes with time, difficulty and used ingredients; the missing ingredients are rechecked by the app against the inventory (the model alone is unreliable at this) and the recipes with more missing ingredients go last. Opening a recipe generates its step-by-step instructions and variations on demand.
 
+The app follows the device language: **Italian if the phone is set to Italian, English otherwise**. That covers the UI (`res/values-it`), the detection and recipe prompts, and the names of the ingredients recognised by MobileCLIP, so the recipes come out in the same language. The JSON keys in the prompts stay in English: they are the parser's contract.
+
 ## Architecture
 
 ```
@@ -50,6 +52,7 @@ Every feature follows Clean Architecture + MVI (`data / domain / presentation`),
 - `inventory/` — Room, ingredient inventory, model status banner on home, keyword emoji resolver
 - `recipes/` — `LlmRecipeGenerator` (two-stage generation + retries), tolerant `RecipeJsonParser`
 - `core/data/ai/` — `LlmCatalog`, `ModelSource` (AiPacks | BundledAssets), `ModelRepository` (automatic provisioning), `LlmEngineHolder` (engine cache + GPU/CPU policy)
+- `core/domain/` — `AppLanguage` (Italian or English, from the device locale), read by prompts and detectors
 
 ## Ingredient recognition
 
@@ -60,9 +63,10 @@ Every feature follows Clean Architecture + MVI (`data / domain / presentation`),
 **MobileCLIP-S2 zero-shot** (everywhere, Android 12+, the default included) — the image encoder (~140 MB, LiteRT) embeds multi-scale crops of the photo (a grid at 50% and 33% of the short side, pool of interpreters running in parallel) and compares them by cosine similarity against the text embeddings of **864 ingredients + 12 "distractor" labels** precomputed offline. The "classifier" is a text file:
 
 - `scripts/ingredient_labels.txt` — one label per line; `label|display` syntax for aliases ("lactose-free milk|milk"), a `~` prefix for distractors (they absorb the food-free crops, and foods that aren't recipe ingredients like snacks, and are never reported)
+- `scripts/ingredient_names_it.txt` — the Italian name of every display name (`english|italiano`), shown on devices set to Italian. Matching stays on the English labels, since the text encoder was trained on English captions; the script stops if a translation is missing
 - `scripts/prepare_clip_assets.py` — downloads the encoder from Hugging Face if missing (it is gitignored), computes the embeddings with open_clip (4 averaged templates) and writes `assets/clip/label_embeddings.json` (~4.5 MB); with `--verify-image` it checks open_clip ↔ TFLite parity (≥0.99 expected)
 
-Adding an ingredient = adding a line and re-running the script. Confidence threshold 22%, max 15 results per scan. CLIP classifies but does not count, so no quantity is shown in the app: the field survives in the data model (Nano does fill it in) but a placeholder count is worse than none. The vocabulary is closed: CLIP only recognises what is listed in the file.
+Adding an ingredient = adding a line (and its Italian name) and re-running the script. Confidence threshold 22%, max 15 results per scan. CLIP classifies but does not count, so no quantity is shown in the app: the field survives in the data model (Nano does fill it in) but a placeholder count is worse than none. The vocabulary is closed: CLIP only recognises what is listed in the file.
 
 ## The LLM: Gemma 4 E2B on LiteRT-LM, two delivery channels
 

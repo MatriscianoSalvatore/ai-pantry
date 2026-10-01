@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 
+/** Errori della detection: la UI li traduce nella lingua del device. */
+enum class CaptureError { NO_INGREDIENTS, DETECTION_FAILED }
+
 data class CaptureState(
     val target: ScanTarget = ScanTarget.FRIDGE,
     val isAnalyzing: Boolean = false,
@@ -14,6 +17,6 @@ data class CaptureState(
     val accumulated: List<DetectedIngredient> = emptyList(),
     val showResults: Boolean = false,
     val isSaving: Boolean = false,
-    /** Messaggio da mostrare con un pulsante "Riprova" quando la detection fallisce. */
-    val error: String? = null
+    /** Errore da mostrare con un pulsante "Riprova" quando la detection fallisce. */
+    val error: CaptureError? = null
 )

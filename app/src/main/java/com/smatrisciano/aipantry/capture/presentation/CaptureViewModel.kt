@@ -1,6 +1,7 @@
 package com.smatrisciano.aipantry.capture.presentation
 
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
@@ -61,7 +62,7 @@ class CaptureViewModel(
                         _uiState.update {
                             it.copy(
                                 isAnalyzing = false,
-                                error = "No ingredients recognized in this photo. Try a closer shot of a single ingredient."
+                                error = CaptureError.NO_INGREDIENTS
                             )
                         }
                         return@onSuccess
@@ -80,8 +81,9 @@ class CaptureViewModel(
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
+                    Log.w(TAG, "Ingredient detection failed", error)
                     _uiState.update {
-                        it.copy(isAnalyzing = false, error = error.message ?: "Ingredient detection failed")
+                        it.copy(isAnalyzing = false, error = CaptureError.DETECTION_FAILED)
                     }
                 }
         }
@@ -129,5 +131,9 @@ class CaptureViewModel(
             )
             _events.send(CaptureEvent.InventorySaved)
         }
+    }
+
+    private companion object {
+        const val TAG = "CaptureViewModel"
     }
 }

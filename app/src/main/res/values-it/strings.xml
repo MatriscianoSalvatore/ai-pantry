@@ -1,0 +1,73 @@
+<resources>
+    <!-- Comuni -->
+    <string name="back">Indietro</string>
+    <string name="retry">Riprova</string>
+    <string name="remove_ingredient">Rimuovi %1$s</string>
+    <string name="fridge">Frigo</string>
+    <string name="pantry">Dispensa</string>
+    <plurals name="ingredient_count">
+        <item quantity="one">%d ingrediente</item>
+        <item quantity="other">%d ingredienti</item>
+    </plurals>
+
+    <!-- Inventario -->
+    <string name="inventory_subtitle">Cucina con quello che hai in frigo · 100% on device</string>
+    <string name="clear_all">Svuota tutto</string>
+    <string name="section_fridge">🧊 Frigo</string>
+    <string name="section_pantry">🗄️ Dispensa</string>
+    <string name="what_can_i_cook_count">Cosa posso cucinare? (%1$d)</string>
+    <string name="scan">Scansiona</string>
+    <string name="empty_pantry_title">La tua dispensa è vuota</string>
+    <string name="empty_pantry_body">Fai una foto al frigo e alla dispensa.\nGli ingredienti vengono riconosciuti sul dispositivo: le foto non lasciano mai il telefono.</string>
+    <string name="scan_my_fridge">Scansiona il frigo</string>
+    <string name="ai_status_ready">%1$s pronto · sul dispositivo</string>
+    <string name="ai_status_downloading">Download di %1$s…</string>
+    <string name="ai_status_preparing">Preparazione di %1$s…</string>
+    <string name="ai_status_failed">Modello AI non disponibile: riavvia l\'app per riprovare</string>
+
+    <!-- Scansione -->
+    <string name="captured_photo">Foto scattata</string>
+    <plurals name="scan_session_count">
+        <item quantity="one">%d ingrediente in questa scansione · tocca per rivederlo</item>
+        <item quantity="other">%d ingredienti in questa scansione · tocca per rivederli</item>
+    </plurals>
+    <string name="pick_from_gallery">Scegli dalla galleria</string>
+    <string name="detecting_ingredients">Riconoscimento degli ingredienti sul dispositivo…</string>
+    <string name="point_at_fridge">Inquadra il frigo e scatta</string>
+    <string name="point_at_pantry">Inquadra la dispensa e scatta</string>
+    <string name="take_another_photo">Scatta un\'altra foto</string>
+    <string name="ingredients_detected">Ingredienti riconosciuti</string>
+    <string name="detection_engine">Motore: %1$s · 100%% sul dispositivo</string>
+    <string name="scan_another">Altra scansione</string>
+    <string name="add_to_pantry_count">Aggiungi alla dispensa (%1$d)</string>
+    <string name="camera_permission_rationale">Serve l\'accesso alla fotocamera per scansionare frigo e dispensa.\nLe foto non lasciano mai il dispositivo.</string>
+    <string name="grant_camera_access">Consenti l\'accesso alla fotocamera</string>
+    <string name="error_no_ingredients">Nessun ingrediente riconosciuto in questa foto. Prova con uno scatto più ravvicinato.</string>
+    <string name="error_detection_failed">Riconoscimento degli ingredienti non riuscito. Prova con un\'altra foto.</string>
+
+    <!-- Ricette -->
+    <string name="what_can_i_cook">Cosa posso cucinare?</string>
+    <string name="regenerate">Rigenera</string>
+    <string name="recipe_generation_failed">Generazione delle ricette non riuscita</string>
+    <string name="recipe_generation_failed_body">Il modello sul dispositivo non ha restituito ricette valide. Riprova.</string>
+    <string name="generation_engine">%1$s · 100%% sul dispositivo</string>
+    <string name="progress_loading_model">Caricamento di %1$s sul dispositivo…</string>
+    <plurals name="progress_generating">
+        <item quantity="one">Genero ricette con %d ingrediente…</item>
+        <item quantity="other">Genero ricette con %d ingredienti…</item>
+    </plurals>
+    <string name="progress_retrying">Risposta non valida, nuovo tentativo…</string>
+    <string name="prep_time_minutes">%1$d min</string>
+    <string name="missing_ingredients">🛒 Mancano: %1$s</string>
+    <string name="difficulty_easy">Facile</string>
+    <string name="difficulty_medium">Media</string>
+    <string name="difficulty_hard">Difficile</string>
+
+    <!-- Dettaglio ricetta -->
+    <string name="ingredients_from_pantry">Ingredienti dalla tua dispensa</string>
+    <string name="you_will_also_need">Ti servirà anche</string>
+    <string name="instructions">Procedimento</string>
+    <string name="writing_instructions">Genero la ricetta on device…</string>
+    <string name="instructions_failed">Non è stato possibile generare la ricetta</string>
+    <string name="variants">Varianti</string>
+</resources>

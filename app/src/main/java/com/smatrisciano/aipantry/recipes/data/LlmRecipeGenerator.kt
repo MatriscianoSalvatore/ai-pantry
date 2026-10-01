@@ -6,7 +6,9 @@ import com.google.ai.edge.litertlm.Contents
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.core.data.ai.text
+import com.smatrisciano.aipantry.core.domain.AppLanguage
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
+import com.smatrisciano.aipantry.recipes.domain.GenerationProgress
 import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 import kotlinx.coroutines.CancellationException
@@ -32,16 +34,17 @@ class LlmRecipeGenerator(
 
     override suspend fun generate(
         ingredients: List<Ingredient>,
-        onProgress: (String) -> Unit
+        onProgress: (GenerationProgress) -> Unit
     ): List<Recipe> = withContext(Dispatchers.Default) {
         val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
-        onProgress("Loading ${model.displayName} on-device…")
+        onProgress(GenerationProgress.LoadingModel(model.displayName))
         engineHolder.acquire(model, modelRepository.modelFile(model))
 
-        onProgress("Generating recipes with ${ingredients.size} ingredients…")
+        onProgress(GenerationProgress.Generating(ingredients.size))
+        val language = AppLanguage.current()
         val recipes = withRetry { attempt ->
-            if (attempt > 0) onProgress("Output not parseable, retrying…")
-            val rawOutput = generateChecked(model, buildListPrompt(ingredients))
+            if (attempt > 0) onProgress(GenerationProgress.Retrying)
+            val rawOutput = generateChecked(model, buildListPrompt(ingredients, language))
             Log.d(TAG, "raw list output: $rawOutput")
             RecipeJsonParser.parse(rawOutput)
         }
@@ -52,10 +55,10 @@ class LlmRecipeGenerator(
         val normalized = recipes.map { recipe ->
             val (owned, toBuy) = recipe.usedIngredients.partition { used ->
                 val u = normalizeIngredientName(used.name)
-                PANTRY_STAPLES.any { it in u } || available.any { it in u || u in it }
+                isPantryStaple(u) || available.any { it in u || u in it }
             }
             val missing = (recipe.missingIngredients + toBuy)
-                .filterNot { m -> PANTRY_STAPLES.any { it in normalizeIngredientName(m.name) } }
+                .filterNot { m -> isPantryStaple(normalizeIngredientName(m.name)) }
                 .distinctBy { normalizeIngredientName(it.name) }
             recipe.copy(usedIngredients = owned, missingIngredients = missing)
         }
@@ -71,7 +74,7 @@ class LlmRecipeGenerator(
     ): Recipe = withContext(Dispatchers.Default) {
         val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
         withRetry {
-            val rawOutput = generateChecked(model, buildDetailsPrompt(recipe))
+            val rawOutput = generateChecked(model, buildDetailsPrompt(recipe, AppLanguage.current()))
             Log.d(TAG, "raw details output: $rawOutput")
             RecipeJsonParser.parseDetails(recipe, rawOutput)
         }
@@ -152,40 +155,70 @@ class LlmRecipeGenerator(
         throw requireNotNull(lastError)
     }
 
-    private fun buildListPrompt(ingredients: List<Ingredient>): String {
+    // Chiavi JSON e valori di difficulty restano in inglese in entrambe le
+    // lingue: sono il contratto col parser, si traducono solo i contenuti
+    private fun buildListPrompt(ingredients: List<Ingredient>, language: AppLanguage): String {
         val names = ingredients.joinToString(", ") { it.name }
         // Prompt breve: meno token in input = meno prefill = più veloce su CPU
-        return """
-            Ingredients: $names.
-            Output ONLY a JSON array of 4 recipes, each exactly:
-            {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[names]}
-            No text, no amounts, no steps.
-        """.trimIndent()
+        return when (language) {
+            AppLanguage.EN -> """
+                Ingredients: $names.
+                Output ONLY a JSON array of 4 recipes, each exactly:
+                {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[names]}
+                No text, no amounts, no steps.
+            """
+            AppLanguage.IT -> """
+                Ingredienti: $names.
+                Rispondi SOLO con un array JSON di 4 ricette, ognuna esattamente:
+                {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[nomi]}
+                Titoli e ingredienti in italiano. Niente testo, niente quantità, niente passaggi.
+            """
+        }.trimIndent()
     }
 
-    private fun buildDetailsPrompt(recipe: Recipe): String {
+    private fun buildDetailsPrompt(recipe: Recipe, language: AppLanguage): String {
         val names = (recipe.usedIngredients + recipe.missingIngredients).joinToString { it.name }
         // Descrizioni dei campi (non valori di esempio: il 1B li copierebbe pari
         // pari). Metric only. Corto ma con schema chiaro.
-        return """
-            Recipe: "${recipe.title}". Ingredients: $names.
-            Give real metric amounts (g/ml, never tbsp/cups) and real cooking steps.
-            Respond with ONLY a JSON object (no markdown):
-            {
-              "whySuitable": string (one short sentence why it fits),
-              "ingredients": [{"name": string, "amount": string in g or ml}],
-              "steps": [string] (4 to 8 real cooking steps),
-              "variants": [string] (up to 3 variations)
-            }
-        """.trimIndent()
+        return when (language) {
+            AppLanguage.EN -> """
+                Recipe: "${recipe.title}". Ingredients: $names.
+                Give real metric amounts (g/ml, never tbsp/cups) and real cooking steps.
+                Respond with ONLY a JSON object (no markdown):
+                {
+                  "whySuitable": string (one short sentence why it fits),
+                  "ingredients": [{"name": string, "amount": string in g or ml}],
+                  "steps": [string] (4 to 8 real cooking steps),
+                  "variants": [string] (up to 3 variations)
+                }
+            """
+            AppLanguage.IT -> """
+                Ricetta: "${recipe.title}". Ingredienti: $names.
+                Indica quantità reali in unità metriche (g/ml, mai cucchiai o tazze) e veri passaggi di cottura.
+                Rispondi SOLO con un oggetto JSON (niente markdown), con i testi in italiano:
+                {
+                  "whySuitable": string (una frase breve sul perché è adatta),
+                  "ingredients": [{"name": string, "amount": string in g o ml}],
+                  "steps": [string] (da 4 a 8 veri passaggi di cottura),
+                  "variants": [string] (fino a 3 varianti)
+                }
+            """
+        }.trimIndent()
     }
 
-    /** "2 tbsp Olive Oil" → "olive oil": via quantità e unità di misura. */
+    /** Match a parola intera: "pepe" non deve coprire "peperoni", né "sale" "salame". */
+    private fun isPantryStaple(name: String): Boolean =
+        PANTRY_STAPLES.any { Regex("\\b${Regex.escape(it)}\\b").containsMatchIn(name) }
+
+    /** "2 tbsp Olive Oil" / "2 cucchiai d'olio" → "olive oil" / "olio": via quantità e unità. */
     private fun normalizeIngredientName(raw: String): String =
         raw.lowercase()
             .replace(Regex("""^[\d\s/.,½¼¾()-]+"""), "")
             .replace(
-                Regex("""^(tbsps?|tsps?|tablespoons?|teaspoons?|cups?|grams?|g|kg|ml|l|oz|lbs?|pcs?|pieces?|cloves?|slices?|cans?|packs?|bunch(es)?)\s+(of\s+)?"""),
+                Regex(
+                    """^(tbsps?|tsps?|tablespoons?|teaspoons?|cups?|grams?|g|kg|ml|l|oz|lbs?|pcs?|pieces?|cloves?|slices?|cans?|packs?|bunch(es)?|""" +
+                        """cucchia(?:ini|ino|io|i)|tazz[ae]|grammi|gr|pz|pezz[io]|spicch[io]|fett[ae]|lattin[ae]|scatolett[ae]|confezion[ei]|mazz[oi]|pizzico)\s+(of\s+|di\s+|d')?"""
+                ),
                 ""
             )
             .trim()
@@ -203,10 +236,14 @@ class LlmRecipeGenerator(
 
         val garbageMarkers = listOf("<unused", "<pad>", "<unk>")
 
-        // Dispensa di base sempre disponibile (come da prompt): mai "da comprare"
+        // Dispensa di base sempre disponibile (come da prompt): mai "da comprare".
+        // Entrambe le lingue insieme: l'inventario può mescolarle se l'utente
+        // ha cambiato lingua tra una scansione e l'altra
         val PANTRY_STAPLES = setOf(
             "water", "salt", "pepper", "olive oil", "oil",
-            "sugar", "flour", "bread", "butter", "vinegar"
+            "sugar", "flour", "bread", "butter", "vinegar",
+            "acqua", "sale", "pepe", "olio d'oliva", "olio",
+            "zucchero", "farina", "pane", "burro", "aceto"
         )
     }
 }

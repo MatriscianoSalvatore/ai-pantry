@@ -1,0 +1,892 @@
+# Italian names for the ingredients in ingredient_labels.txt, one line per display name:
+# "english display|nome italiano". prepare_clip_assets.py adds them to
+# label_embeddings.json, and the app shows them when the device language is Italian.
+# Every display name in ingredient_labels.txt needs a line here: the script checks it.
+# --- Dairy & eggs ---
+milk|latte
+yogurt|yogurt
+greek yogurt|yogurt greco
+butter|burro
+margarine|margarina
+cream|panna
+sour cream|panna acida
+cream cheese|formaggio spalmabile
+mozzarella|mozzarella
+parmesan cheese|parmigiano
+cheddar cheese|cheddar
+sliced cheese|formaggio a fette
+ricotta|ricotta
+mascarpone|mascarpone
+eggs|uova
+buttermilk|latticello
+kefir|kefir
+whipped cream|panna montata
+condensed milk|latte condensato
+evaporated milk|latte evaporato
+oat milk|latte d'avena
+almond milk|latte di mandorla
+soy milk|latte di soia
+creme fraiche|crème fraîche
+custard|crema pasticcera
+vanilla pudding|budino alla vaniglia
+skim milk|latte scremato
+whole milk|latte intero
+chocolate milk|latte al cioccolato
+strawberry milk|latte alla fragola
+protein shake|shake proteico
+skyr|skyr
+fruit yogurt|yogurt alla frutta
+drinking yogurt|yogurt da bere
+plant-based yogurt|yogurt vegetale
+vegan cheese slices|formaggio vegano a fette
+cashew cheese|formaggio di anacardi
+
+# --- Cheese ---
+brie|brie
+camembert|camembert
+gouda|gouda
+edam|edam
+emmental|emmental
+gruyere cheese|groviera
+feta cheese|feta
+halloumi|halloumi
+goat cheese|formaggio di capra
+blue cheese|formaggio erborinato
+gorgonzola|gorgonzola
+provolone|provolone
+pecorino|pecorino
+burrata|burrata
+stracchino|stracchino
+taleggio|taleggio
+fontina|fontina
+cottage cheese|fiocchi di latte
+quark|quark
+paneer|paneer
+manchego|manchego
+swiss cheese slices|emmental a fette
+string cheese|bastoncini di formaggio
+grated cheese|formaggio grattugiato
+smoked scamorza|scamorza affumicata
+
+# --- Vegetables ---
+tomatoes|pomodori
+cherry tomatoes|pomodorini
+lettuce|lattuga
+iceberg lettuce|insalata iceberg
+spinach|spinaci
+arugula|rucola
+kale|cavolo riccio
+zucchini|zucchine
+eggplant|melanzana
+bell pepper|peperoni
+red bell pepper|peperone rosso
+yellow bell pepper|peperone giallo
+carrots|carote
+celery|sedano
+cucumber|cetriolo
+broccoli|broccoli
+cauliflower|cavolfiore
+green beans|fagiolini
+peas|piselli
+corn|mais
+sweet corn cob|pannocchia di mais
+onion|cipolla
+red onion|cipolla rossa
+spring onion|cipollotto
+garlic|aglio
+ginger|zenzero
+potatoes|patate
+sweet potatoes|patate dolci
+pumpkin|zucca
+butternut squash|zucca butternut
+mushrooms|funghi
+champignon mushrooms|funghi champignon
+asparagus|asparagi
+artichoke|carciofo
+fennel|finocchio
+leek|porro
+radishes|ravanelli
+beetroot|barbabietola
+cabbage|cavolo cappuccio
+red cabbage|cavolo cappuccio rosso
+brussels sprouts|cavoletti di Bruxelles
+avocado|avocado
+chili pepper|peperoncino
+fresh basil|basilico fresco
+fresh parsley|prezzemolo fresco
+fresh rosemary|rosmarino fresco
+fresh mint|menta fresca
+fresh cilantro|coriandolo fresco
+romaine lettuce|lattuga romana
+endive|indivia
+radicchio|radicchio
+swiss chard|bietole
+collard greens|cavolo da foglia
+bok choy|pak choi
+napa cabbage|cavolo cinese
+watercress|crescione
+savoy cabbage|verza
+turnip|rapa
+parsnip|pastinaca
+kohlrabi|cavolo rapa
+celeriac|sedano rapa
+daikon radish|daikon
+okra|okra
+snow peas|taccole
+sugar snap peas|piselli mangiatutto
+edamame|edamame
+jalapeno peppers|peperoncini jalapeño
+habanero pepper|peperoncino habanero
+poblano pepper|peperoncino poblano
+green chili peppers|peperoncini verdi
+shallots|scalogni
+pearl onions|cipolline
+white onion|cipolla bianca
+yellow onion|cipolla dorata
+broccolini|broccolini
+romanesco|cavolo romanesco
+artichoke hearts|cuori di carciofo
+hearts of palm|cuori di palma
+bamboo shoots|germogli di bambù
+water chestnuts|castagne d'acqua
+bean sprouts|germogli di soia
+alfalfa sprouts|germogli di alfalfa
+microgreens|micro ortaggi
+baby spinach|spinacini
+mixed salad|insalata mista
+coleslaw mix|mix per coleslaw
+shiitake mushrooms|funghi shiitake
+portobello mushroom|fungo portobello
+oyster mushrooms|funghi pleurotus
+enoki mushrooms|funghi enoki
+porcini mushrooms|funghi porcini
+cherry radishes|ravanelli tondi
+baby carrots|carotine
+rainbow carrots|carote colorate
+purple potatoes|patate viola
+fingerling potatoes|patate fingerling
+new potatoes|patate novelle
+russet potatoes|patate farinose
+red potatoes|patate rosse
+mini cucumbers|mini cetrioli
+pickling cucumbers|cetrioli da sottaceto
+heirloom tomatoes|pomodori antichi
+beefsteak tomatoes|pomodori cuore di bue
+roma tomatoes|pomodori perini
+tomatoes on the vine|pomodori a grappolo
+green tomatoes|pomodori verdi
+tomatillos|tomatillos
+spaghetti squash|zucca spaghetti
+acorn squash|zucca acorn
+delicata squash|zucca delicata
+zucchini noodles|spaghetti di zucchine
+cauliflower rice|riso di cavolfiore
+butter lettuce|lattuga cappuccia
+little gem lettuce|lattuga little gem
+frisee|indivia riccia
+mustard greens|foglie di senape
+dandelion greens|tarassaco
+sorrel|acetosa
+white asparagus|asparagi bianchi
+baby corn|mini pannocchie
+sweet mini peppers|mini peperoni dolci
+padron peppers|peperoni di Padrón
+shishito peppers|peperoni shishito
+banana peppers|peperoni banana
+pepperoncini|friggitelli
+
+# --- Herbs & spices ---
+fresh thyme|timo fresco
+fresh oregano|origano fresco
+fresh sage|salvia fresca
+fresh dill|aneto fresco
+fresh chives|erba cipollina fresca
+fresh tarragon|dragoncello fresco
+bay leaves|foglie di alloro
+lemongrass|citronella
+dried oregano|origano secco
+paprika|paprika
+smoked paprika|paprika affumicata
+cumin|cumino
+turmeric|curcuma
+curry powder|curry in polvere
+garam masala|garam masala
+cinnamon sticks|stecche di cannella
+nutmeg|noce moscata
+cloves|chiodi di garofano
+cardamom pods|bacche di cardamomo
+star anise|anice stellato
+saffron|zafferano
+vanilla extract|estratto di vaniglia
+chili flakes|peperoncino in fiocchi
+cayenne pepper|pepe di Cayenna
+white pepper|pepe bianco
+fennel seeds|semi di finocchio
+mustard seeds|semi di senape
+sesame seeds|semi di sesamo
+poppy seeds|semi di papavero
+zaatar|za'atar
+
+# --- Fruit ---
+apples|mele
+green apples|mele verdi
+bananas|banane
+oranges|arance
+lemons|limoni
+limes|lime
+grapefruit|pompelmo
+strawberries|fragole
+blueberries|mirtilli
+raspberries|lamponi
+blackberries|more
+grapes|uva
+watermelon|anguria
+cantaloupe melon|melone cantalupo
+pineapple|ananas
+mango|mango
+papaya|papaya
+kiwi|kiwi
+peaches|pesche
+apricots|albicocche
+plums|prugne
+pears|pere
+cherries|ciliegie
+figs|fichi
+pomegranate|melograno
+red apples|mele rosse
+clementines|clementine
+tangerines|mandarini
+blood oranges|arance rosse
+pomelo|pomelo
+kumquat|kumquat
+nectarines|pesche noci
+honeydew melon|melone bianco
+cranberries|mirtilli rossi
+gooseberries|uva spina
+red currants|ribes rosso
+black currants|ribes nero
+mulberries|more di gelso
+lychee|litchi
+dragon fruit|pitaya
+passion fruit|frutto della passione
+guava|guava
+starfruit|carambola
+persimmon|cachi
+quince|mela cotogna
+plantains|banane platano
+coconut|cocco
+dried figs|fichi secchi
+prunes|prugne secche
+apple sauce|purea di mele
+canned peaches|pesche sciroppate
+canned pineapple|ananas sciroppato
+green grapes|uva bianca
+red grapes|uva rossa
+golden kiwi|kiwi giallo
+meyer lemon|limone Meyer
+yuzu|yuzu
+donut peaches|pesche piatte
+white peaches|pesche bianche
+red pears|pere rosse
+asian pear|pera nashi
+medjool dates|datteri Medjool
+sultanas|uvetta sultanina
+goji berries|bacche di goji
+physalis|alchechengi
+jackfruit|jackfruit
+frozen acai|açaí surgelato
+
+# --- Meat & cured meats ---
+chicken breast|petto di pollo
+whole chicken|pollo intero
+chicken thighs|sovracosce di pollo
+ground beef|macinato di manzo
+beef steak|bistecca di manzo
+pork chops|braciole di maiale
+pork loin|lonza di maiale
+bacon|bacon
+ham|prosciutto cotto
+prosciutto|prosciutto crudo
+salami|salame
+sausages|salsicce
+hot dogs|würstel
+turkey slices|fesa di tacchino a fette
+lamb chops|costolette d'agnello
+ground pork|macinato di maiale
+ground turkey|macinato di tacchino
+chicken wings|ali di pollo
+chicken drumsticks|fusi di pollo
+whole turkey|tacchino intero
+duck breast|petto d'anatra
+veal cutlets|fettine di vitello
+beef roast|arrosto di manzo
+brisket|punta di petto di manzo
+pork ribs|costine di maiale
+pork belly|pancia di maiale
+pancetta|pancetta
+guanciale|guanciale
+mortadella|mortadella
+bresaola|bresaola
+chorizo|chorizo
+pepperoni|salame piccante
+pastrami|pastrami
+corned beef|corned beef
+liver pate|paté di fegato
+meatballs|polpette
+burger patties|hamburger
+kebab meat|carne per kebab
+turkey breast|petto di tacchino
+chicken liver|fegatini di pollo
+beef liver|fegato di manzo
+oxtail|coda di bue
+lamb leg|cosciotto d'agnello
+lamb shoulder|spalla d'agnello
+rabbit meat|coniglio
+venison|carne di cervo
+quail|quaglie
+quail eggs|uova di quaglia
+duck eggs|uova d'anatra
+blood sausage|sanguinaccio
+liverwurst|leberwurst
+spam|carne in scatola
+canned chicken|pollo in scatola
+beef jerky|beef jerky
+biltong|biltong
+veggie burgers|burger vegetali
+plant-based mince|macinato vegetale
+vegan nuggets|nuggets vegani
+soy chunks|spezzatino di soia
+
+# --- Fish & seafood ---
+salmon fillet|filetto di salmone
+tuna steak|trancio di tonno
+white fish fillet|filetto di pesce bianco
+shrimp|gamberetti
+mussels|cozze
+smoked salmon|salmone affumicato
+canned tuna|tonno in scatola
+canned sardines|sardine in scatola
+anchovies|acciughe
+cod fillet|filetto di merluzzo
+halibut|ippoglosso
+sea bass|branzino
+sea bream|orata
+trout|trota
+mackerel|sgombro
+herring|aringa
+fresh sardines|sardine fresche
+swordfish|pesce spada
+octopus|polpo
+squid|calamari
+calamari rings|anelli di calamaro
+crab|granchio
+lobster|astice
+scallops|capesante
+clams|vongole
+oysters|ostriche
+prawns|gamberi
+caviar|caviale
+surimi sticks|bastoncini di surimi
+fish fingers|bastoncini di pesce
+smoked mackerel|sgombro affumicato
+pickled herring|aringhe marinate
+tilapia fillet|filetto di tilapia
+catfish|pesce gatto
+monkfish|rana pescatrice
+red snapper|dentice rosso
+eel|anguilla
+smoked eel|anguilla affumicata
+fish roe|uova di pesce
+shrimp paste|pasta di gamberi
+dried shrimp|gamberetti essiccati
+canned crab meat|polpa di granchio in scatola
+smoked trout|trota affumicata
+
+# --- Pantry staples ---
+spaghetti|spaghetti
+penne pasta|penne
+rice|riso
+basmati rice|riso basmati
+risotto rice|riso per risotto
+couscous|couscous
+quinoa|quinoa
+bread|pane
+sliced bread|pane in cassetta
+baguette|baguette
+tortilla wraps|tortilla wrap
+flour|farina
+sugar|zucchero
+brown sugar|zucchero di canna
+salt|sale
+black pepper|pepe nero
+olive oil|olio d'oliva
+vegetable oil|olio di semi
+vinegar|aceto
+balsamic vinegar|aceto balsamico
+canned tomatoes|pomodori pelati
+passata|passata
+tomato paste|concentrato di pomodoro
+canned beans|fagioli in scatola
+chickpeas|ceci
+lentils|lenticchie
+canned corn|mais in scatola
+coconut milk|latte di cocco
+broth cubes|dadi da brodo
+breadcrumbs|pangrattato
+polenta|polenta
+oats|fiocchi d'avena
+cornflakes|cornflakes
+cereal|cereali
+rice cakes|gallette di riso
+peanut butter|burro di arachidi
+jam|marmellata
+honey|miele
+nutella|Nutella
+chocolate spread|crema spalmabile al cioccolato
+maple syrup|sciroppo d'acero
+vegetable broth|brodo vegetale
+chicken broth|brodo di pollo
+beef broth|brodo di manzo
+bone broth|brodo di ossa
+bouillon powder|brodo granulare
+gravy granules|preparato per sugo d'arrosto
+stuffing mix|preparato per ripieno
+instant mashed potatoes|purè in fiocchi
+mac and cheese|mac and cheese
+canned soup|zuppa in scatola
+tomato soup|zuppa di pomodoro
+minestrone|minestrone
+chili con carne|chili con carne
+tapenade|tapenade
+anchovy paste|pasta d'acciughe
+brown sauce|brown sauce
+relish|relish
+horseradish sauce|salsa al rafano
+mint sauce|salsa alla menta
+mango chutney|chutney di mango
+wasabi peas|piselli al wasabi
+seaweed snacks|snack di alghe
+protein powder|proteine in polvere
+nutritional yeast|lievito alimentare
+
+# --- Pasta, grains & bread ---
+fusilli pasta|fusilli
+rigatoni pasta|rigatoni
+farfalle pasta|farfalle
+tagliatelle|tagliatelle
+lasagna sheets|sfoglie per lasagne
+macaroni|maccheroni
+egg noodles|noodles all'uovo
+rice noodles|noodles di riso
+soba noodles|soba
+udon noodles|udon
+ramen noodles|noodles per ramen
+brown rice|riso integrale
+jasmine rice|riso jasmine
+wild rice|riso selvatico
+sushi rice|riso per sushi
+barley|orzo
+buckwheat|grano saraceno
+bulgur|bulgur
+millet|miglio
+farro|farro
+semolina|semola
+cornmeal|farina di mais
+whole wheat bread|pane integrale
+rye bread|pane di segale
+sourdough bread|pane al lievito madre
+ciabatta|ciabatta
+focaccia|focaccia
+pita bread|pane pita
+naan bread|pane naan
+croissants|cornetti
+brioche|brioche
+english muffins|muffin inglesi
+hamburger buns|panini per hamburger
+hot dog buns|panini per hot dog
+breadsticks|grissini
+
+# --- Canned & jarred food ---
+canned lentils|lenticchie in scatola
+canned peas|piselli in scatola
+canned mushrooms|funghi in scatola
+canned artichokes|carciofi in scatola
+roasted red peppers|peperoni arrostiti
+canned salmon|salmone in scatola
+canned mackerel|sgombro in scatola
+baked beans|fagioli in salsa di pomodoro
+refried beans|fagioli refritos
+black beans can|fagioli neri in scatola
+kidney beans can|fagioli rossi in scatola
+white beans can|cannellini in scatola
+sauerkraut|crauti
+kimchi|kimchi
+pickled onions|cipolline sottaceto
+pickled jalapenos|jalapeño sottaceto
+gherkins|cetriolini sottaceto
+marinated artichokes|carciofini sott'olio
+ajvar|ajvar
+
+# --- Baking ---
+baking powder|lievito per dolci
+baking soda|bicarbonato
+yeast packets|lievito di birra in bustine
+powdered sugar|zucchero a velo
+cocoa powder|cacao in polvere
+chocolate chips|gocce di cioccolato
+sprinkles|codette di zucchero
+cornstarch|amido di mais
+almond flour|farina di mandorle
+coconut flour|farina di cocco
+marzipan|marzapane
+pie crust|pasta brisée
+cake mix|preparato per torte
+pancake mix|preparato per pancake
+
+# --- Condiments & sauces ---
+ketchup|ketchup
+mayonnaise|maionese
+mustard|senape
+soy sauce|salsa di soia
+hot sauce|salsa piccante
+barbecue sauce|salsa barbecue
+pesto|pesto
+salsa|salsa messicana
+hummus|hummus
+tahini|tahini
+fish sauce|salsa di pesce
+sriracha|salsa sriracha
+salad dressing|condimento per insalata
+pickles|sottaceti
+olives|olive
+green olives|olive verdi
+capers|capperi
+sun-dried tomatoes|pomodori secchi
+aioli|aioli
+tartar sauce|salsa tartara
+ranch dressing|salsa ranch
+caesar dressing|salsa Caesar
+vinaigrette|vinaigrette
+teriyaki sauce|salsa teriyaki
+hoisin sauce|salsa hoisin
+oyster sauce|salsa di ostriche
+sweet chili sauce|salsa chili dolce
+ponzu sauce|salsa ponzu
+miso paste|pasta di miso
+gochujang|gochujang
+harissa|harissa
+chimichurri|chimichurri
+tzatziki|tzatziki
+guacamole|guacamole
+salsa verde|salsa verde
+cranberry sauce|salsa di mirtilli rossi
+apple cider vinegar|aceto di mele
+red wine vinegar|aceto di vino rosso
+rice vinegar|aceto di riso
+sesame oil|olio di sesamo
+truffle oil|olio al tartufo
+coconut oil|olio di cocco
+sunflower oil|olio di semi di girasole
+ghee|ghee
+dijon mustard|senape di Digione
+whole grain mustard|senape in grani
+honey mustard|senape al miele
+truffle paste|crema di tartufo
+garlic paste|pasta d'aglio
+ginger paste|pasta di zenzero
+caper berries|cucunci
+cornichons|cornichon
+preserved lemons|limoni sotto sale
+
+# --- Breakfast & spreads ---
+almond butter|crema di mandorle
+cashew butter|crema di anacardi
+marmalade|marmellata d'arance
+strawberry jam|marmellata di fragole
+apricot jam|marmellata di albicocche
+blueberry jam|marmellata di mirtilli
+lemon curd|lemon curd
+apple butter|crema di mele
+speculoos spread|crema di speculoos
+golden syrup|golden syrup
+agave syrup|sciroppo d'agave
+date syrup|sciroppo di datteri
+molasses|melassa
+instant oatmeal|porridge istantaneo
+bran flakes|fiocchi di crusca
+puffed rice cereal|riso soffiato
+chocolate cereal|cereali al cioccolato
+
+# --- Snacks, nuts & dried fruit ---
+pretzels|pretzel
+microwave popcorn|popcorn per microonde
+tortilla chips|tortilla chips
+granola bars|barrette di cereali
+muesli|muesli
+rice pudding|budino di riso
+marshmallows|marshmallow
+candy bar|barretta di cioccolato
+wafer cookies|wafer
+biscotti|biscotti
+shortbread|frollini
+brownies|brownie
+muffins|muffin
+donuts|ciambelle
+pistachios|pistacchi
+hazelnuts|nocciole
+pecans|noci pecan
+macadamia nuts|noci di macadamia
+pine nuts|pinoli
+sunflower seeds|semi di girasole
+pumpkin seeds|semi di zucca
+chia seeds|semi di chia
+flax seeds|semi di lino
+trail mix|mix di frutta secca
+dried mango|mango essiccato
+dried cranberries|mirtilli rossi essiccati
+banana chips|chips di banana
+coconut flakes|scaglie di cocco
+
+# --- Desserts & pastries ---
+pound cake|plumcake
+sponge cake|pan di Spagna
+cheesecake|cheesecake
+apple pie|torta di mele
+pumpkin pie|torta di zucca
+fruit tart|crostata di frutta
+eclairs|éclair
+macarons|macarons
+meringue|meringhe
+ladyfingers|savoiardi
+waffle cones|coni per gelato
+ice cream sandwiches|biscotti gelato
+gelato|gelato artigianale
+custard tart|crostata alla crema
+cinnamon rolls|girelle alla cannella
+danish pastry|dolce danese
+strudel|strudel
+scones|scones
+crumpets|crumpet
+profiteroles|profiterole
+
+# --- Frozen, ready meals & misc ---
+frozen peas|piselli surgelati
+frozen spinach|spinaci surgelati
+frozen pizza|pizza surgelata
+ice cream|gelato
+frozen berries|frutti di bosco surgelati
+frozen french fries|patatine fritte surgelate
+tofu|tofu
+tempeh|tempeh
+seitan|seitan
+gnocchi|gnocchi
+fresh ravioli|ravioli freschi
+pizza dough|impasto per pizza
+puff pastry|pasta sfoglia
+parmesan wedge|spicchio di parmigiano
+protein bars|barrette proteiche
+dark chocolate|cioccolato fondente
+chocolate bar|tavoletta di cioccolato
+potato chips|patatine
+nuts|frutta secca
+almonds|mandorle
+walnuts|noci
+peanuts|arachidi
+cashews|anacardi
+raisins|uvetta
+dried apricots|albicocche secche
+dates|datteri
+frozen dumplings|ravioli cinesi surgelati
+frozen chicken nuggets|nuggets di pollo surgelati
+frozen waffles|waffle surgelati
+frozen broccoli|broccoli surgelati
+frozen corn|mais surgelato
+frozen shrimp|gamberetti surgelati
+popsicles|ghiaccioli
+sorbet|sorbetto
+frozen lasagna|lasagne surgelate
+frozen burritos|burritos surgelati
+spring rolls|involtini primavera
+samosas|samosa
+hash browns|rösti di patate
+tater tots|crocchette di patate
+frozen garlic bread|pane all'aglio surgelato
+frozen blueberries|mirtilli surgelati
+frozen strawberries|fragole surgelate
+frozen mango chunks|mango a cubetti surgelato
+frozen onion rings|anelli di cipolla surgelati
+frozen mozzarella sticks|bastoncini di mozzarella surgelati
+frozen falafel|falafel surgelati
+frozen naan|pane naan surgelato
+frozen pierogi|pierogi surgelati
+frozen gyoza|gyoza surgelati
+rotisserie chicken|pollo arrosto
+deli meat slices|affettati
+smoked ham|prosciutto cotto affumicato
+turkey bacon|bacon di tacchino
+chicken sausages|salsicce di pollo
+lamb mince|macinato d'agnello
+seafood mix|misto mare
+garlic butter|burro all'aglio
+herb butter|burro alle erbe
+vanilla ice cream|gelato alla vaniglia
+chocolate ice cream|gelato al cioccolato
+strawberry ice cream|gelato alla fragola
+peanut oil|olio di arachidi
+avocado oil|olio di avocado
+walnut oil|olio di noci
+pumpkin puree|purea di zucca
+cherry pie filling|farcitura di ciliegie
+custard powder|preparato per crema pasticcera
+angel hair pasta|capelli d'angelo
+pearl barley|orzo perlato
+red lentils|lenticchie rosse
+green lentils|lenticchie verdi
+split peas|piselli spezzati
+mung beans|fagioli mung
+black eyed peas|fagioli dall'occhio
+adzuki beans|fagioli azuki
+
+# --- Beverages ---
+orange juice|succo d'arancia
+apple juice|succo di mela
+fruit juice|succo di frutta
+sparkling water|acqua frizzante
+water bottle|bottiglia d'acqua
+soda|bibita gassata
+cola|cola
+beer|birra
+white wine|vino bianco
+red wine|vino rosso
+iced tea|tè freddo
+lemonade|limonata
+energy drink|energy drink
+tonic water|acqua tonica
+ginger ale|ginger ale
+kombucha|kombucha
+cold brew coffee|caffè cold brew
+coconut water|acqua di cocco
+smoothie|frullato
+rose wine|vino rosato
+prosecco|prosecco
+champagne|champagne
+cider|sidro
+rice milk|latte di riso
+grapefruit juice|succo di pompelmo
+cranberry juice|succo di mirtillo rosso
+tomato juice|succo di pomodoro
+pomegranate juice|succo di melograno
+grape juice|succo d'uva
+ginger beer|ginger beer
+root beer|root beer
+coconut milk drink|bevanda al cocco
+
+# --- Coffee & tea ---
+ground coffee|caffè macinato
+coffee beans|caffè in grani
+instant coffee|caffè solubile
+espresso capsules|capsule di caffè
+decaf coffee|caffè decaffeinato
+black tea|tè nero
+green tea|tè verde
+herbal tea|tisana
+chamomile tea|camomilla
+earl grey tea|tè Earl Grey
+rooibos tea|tè rooibos
+hot chocolate powder|preparato per cioccolata calda
+
+# --- Italian & European specialties ---
+nduja|'nduja
+speck|speck
+culatello|culatello
+lardo|lardo
+cotechino|cotechino
+porchetta|porchetta
+arancini|arancini
+caciocavallo|caciocavallo
+asiago|asiago
+robiola|robiola
+crescenza|crescenza
+buffalo mozzarella|mozzarella di bufala
+grana padano|Grana Padano
+tiramisu|tiramisù
+panettone|panettone
+pandoro|pandoro
+cannoli|cannoli
+piadina|piadina
+carasau bread|pane carasau
+orecchiette|orecchiette
+trofie|trofie
+paccheri|paccheri
+cannelloni|cannelloni
+tortellini|tortellini
+cappelletti|cappelletti
+agnolotti|agnolotti
+limoncello|limoncello
+grappa|grappa
+aperol|Aperol
+campari|Campari
+vermouth|vermouth
+
+# --- Asian pantry ---
+nori sheets|fogli di alga nori
+wakame|alga wakame
+kombu|alga kombu
+dashi stock|brodo dashi
+mirin|mirin
+sake|sakè
+rice paper wrappers|fogli di carta di riso
+wonton wrappers|sfoglie per wonton
+dumpling wrappers|sfoglie per ravioli cinesi
+tofu puffs|tofu fritto
+tempura flour|farina per tempura
+panko breadcrumbs|pangrattato panko
+furikake|furikake
+wasabi paste|pasta di wasabi
+pickled ginger|zenzero marinato
+chili oil|olio al peperoncino
+black bean sauce|salsa di fagioli neri
+sambal oelek|sambal oelek
+red curry paste|pasta di curry rosso
+green curry paste|pasta di curry verde
+tom yum paste|pasta tom yum
+coconut cream|crema di cocco
+palm sugar|zucchero di palma
+tamarind paste|pasta di tamarindo
+fish cake|tortino di pesce
+glass noodles|spaghetti di soia
+wood ear mushrooms|funghi orecchio di Giuda
+five spice powder|cinque spezie in polvere
+sichuan peppercorns|pepe di Sichuan
+matcha powder|matcha in polvere
+instant noodles|noodles istantanei
+instant ramen|ramen istantaneo
+
+# --- Mexican pantry ---
+corn tortillas|tortillas di mais
+flour tortillas|tortillas di frumento
+taco shells|gusci per tacos
+taco seasoning|spezie per tacos
+enchilada sauce|salsa per enchiladas
+mole sauce|salsa mole
+queso fresco|queso fresco
+cotija cheese|formaggio cotija
+pico de gallo|pico de gallo
+chipotle peppers in adobo|peperoncini chipotle in adobo
+canned green chiles|peperoncini verdi in scatola
+fajita seasoning|spezie per fajitas
+churros|churros
+
+# --- Middle Eastern & Mediterranean ---
+falafel|falafel
+labneh|labneh
+halva|halva
+pita chips|chips di pita
+dolmas|involtini di foglie di vite
+pearl couscous|couscous perlato
+freekeh|freekeh
+pomegranate molasses|melassa di melograno
+rose water|acqua di rose
+orange blossom water|acqua di fiori d'arancio
+dried chickpeas|ceci secchi
+fava beans|fave

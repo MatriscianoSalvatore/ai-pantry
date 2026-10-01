@@ -63,7 +63,7 @@ class NanoIngredientDetector : IngredientDetector {
 
     override suspend fun detect(bitmap: Bitmap, target: ScanTarget): List<DetectedIngredient> {
         val response = model.generateContent(
-            generateContentRequest(ImagePart(bitmap.downscaled()), TextPart(buildPrompt(target))) {
+            generateContentRequest(ImagePart(bitmap.downscaled()), TextPart(DetectionPrompt.build(target))) {
                 temperature = 0.2f
                 candidateCount = 1
             }
@@ -71,17 +71,6 @@ class NanoIngredientDetector : IngredientDetector {
         val rawOutput = response.candidates.firstOrNull()?.text
             ?: error("Gemini Nano returned no candidates")
         return DetectionJsonParser.parse(rawOutput)
-    }
-
-    private fun buildPrompt(target: ScanTarget): String {
-        val place = if (target == ScanTarget.FRIDGE) "fridge" else "pantry"
-        return """
-            This is a photo of the inside of a $place.
-            Identify the food ingredients you can see, at most 15.
-            Respond with ONLY a JSON array (no markdown, no extra text):
-            [{"name": "short ingredient name", "quantity": "approximate quantity like '2 pcs' or '1 carton'"}]
-            Only include items you actually see. Use common English ingredient names.
-        """.trimIndent()
     }
 
     // Il costo in token dell'immagine rientra nel limite input (~4k token) di

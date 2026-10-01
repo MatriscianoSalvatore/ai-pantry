@@ -23,9 +23,11 @@ La lezione: prima di chiedervi come rendere un modello più veloce, chiedetevi s
 
 ## Flusso della demo
 
-1. **Scansione** → fotografi il frigo (chip *Fridge*), poi "Scan another" per la dispensa (*Pantry*). Invece di scattare una foto puoi sceglierne una dalla galleria. Il foglio dei risultati mostra quale motore ha fatto il lavoro; una volta chiuso, si riapre dalla pillola "N ingredients in this scan session".
+1. **Scansione** → fotografi il frigo (chip *Frigo*), poi "Altra scansione" per la dispensa (*Dispensa*). Invece di scattare una foto puoi sceglierne una dalla galleria. Il foglio dei risultati mostra quale motore ha fatto il lavoro; una volta chiuso, si riapre dalla pillola "N ingredienti in questa scansione".
 2. Gli ingredienti riconosciuti finiscono nell'inventario locale (Room). Con MobileCLIP ognuno ha una confidenza e tutto ciò che sta sotto il 22% viene scartato; Gemini Nano non restituisce una confidenza, quindi i suoi risultati mostrano un valore predefinito fisso.
-3. **What can I cook?** → l'LLM genera 4 ricette con tempo, difficoltà e ingredienti usati; gli ingredienti mancanti vengono ricontrollati dall'app confrontandoli con l'inventario (da solo il modello non è affidabile su questo) e le ricette con più ingredienti mancanti finiscono in fondo. Aprendo una ricetta se ne generano su richiesta i passaggi e le varianti.
+3. **Cosa posso cucinare?** → l'LLM genera 4 ricette con tempo, difficoltà e ingredienti usati; gli ingredienti mancanti vengono ricontrollati dall'app confrontandoli con l'inventario (da solo il modello non è affidabile su questo) e le ricette con più ingredienti mancanti finiscono in fondo. Aprendo una ricetta se ne generano su richiesta i passaggi e le varianti.
+
+L'app segue la lingua del dispositivo: **italiano se il telefono è in italiano, inglese altrimenti**. Vale per la UI (`res/values-it`), per i prompt di riconoscimento e delle ricette e per i nomi degli ingredienti riconosciuti da MobileCLIP, quindi anche le ricette escono nella stessa lingua. Le chiavi JSON nei prompt restano in inglese: sono il contratto con il parser.
 
 ## Architettura
 
@@ -50,6 +52,7 @@ Ogni feature segue Clean Architecture + MVI (`data / domain / presentation`), DI
 - `inventory/` — Room, inventario degli ingredienti, banner di stato del modello nella home, risoluzione delle emoji per parola chiave
 - `recipes/` — `LlmRecipeGenerator` (generazione in due fasi + tentativi ripetuti), `RecipeJsonParser` tollerante
 - `core/data/ai/` — `LlmCatalog`, `ModelSource` (AiPacks | BundledAssets), `ModelRepository` (provisioning automatico), `LlmEngineHolder` (cache dell'engine + politica GPU/CPU)
+- `core/domain/` — `AppLanguage` (italiano o inglese, dalla lingua del dispositivo), letto da prompt e detector
 
 ## Riconoscimento degli ingredienti
 
@@ -60,9 +63,10 @@ Ogni feature segue Clean Architecture + MVI (`data / domain / presentation`), DI
 **MobileCLIP-S2 zero-shot** (ovunque, Android 12+, incluso il default) — l'image encoder (~140 MB, LiteRT) calcola gli embedding di ritagli della foto a più scale (una griglia al 50% e al 33% del lato corto, con un pool di interpreter in parallelo) e li confronta con la similarità del coseno con gli embedding testuali di **864 ingredienti + 12 etichette "distrattore"**, precalcolati offline. Il "classificatore" è un file di testo:
 
 - `scripts/ingredient_labels.txt` — un'etichetta per riga; sintassi `etichetta|nome mostrato` per gli alias ("lactose-free milk|milk"), prefisso `~` per i distrattori (assorbono i ritagli senza cibo, e i cibi che non sono ingredienti da ricetta come gli snack, e non vengono mai riportati)
+- `scripts/ingredient_names_it.txt` — il nome italiano di ogni nome mostrato (`english|italiano`), usato sui dispositivi in italiano. Il matching resta sulle etichette inglesi, perché il text encoder è addestrato su didascalie in inglese; lo script si ferma se manca una traduzione
 - `scripts/prepare_clip_assets.py` — scarica l'encoder da Hugging Face se manca (è in gitignore), calcola gli embedding con open_clip (4 template mediati) e scrive `assets/clip/label_embeddings.json` (~4,5 MB); con `--verify-image` verifica la parità open_clip ↔ TFLite (atteso ≥0,99)
 
-Aggiungere un ingrediente = aggiungere una riga e rilanciare lo script. Soglia di confidenza 22%, massimo 15 risultati per scansione. CLIP classifica ma non conta, quindi l'app non mostra quantità: il campo resta nel modello dati (Nano lo compila) ma una quantità segnaposto è peggio di nessuna. Il vocabolario è chiuso: CLIP riconosce solo quello che è elencato nel file.
+Aggiungere un ingrediente = aggiungere una riga (e il suo nome italiano) e rilanciare lo script. Soglia di confidenza 22%, massimo 15 risultati per scansione. CLIP classifica ma non conta, quindi l'app non mostra quantità: il campo resta nel modello dati (Nano lo compila) ma una quantità segnaposto è peggio di nessuna. Il vocabolario è chiuso: CLIP riconosce solo quello che è elencato nel file.
 
 ## L'LLM: Gemma 4 E2B su LiteRT-LM, due canali di distribuzione
 

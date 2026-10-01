@@ -33,9 +33,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.smatrisciano.aipantry.R
 import com.smatrisciano.aipantry.inventory.presentation.composables.ingredientEmoji
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 import com.smatrisciano.aipantry.recipes.presentation.composables.DifficultyBadge
@@ -61,7 +63,7 @@ fun RecipeDetailScreenRoot(
     RecipeDetailScreen(
         recipe = recipe,
         isDetailLoading = state.isDetailLoading,
-        detailError = state.detailError,
+        detailFailed = state.detailFailed,
         onRetryDetails = {
             viewModel.onAction(RecipesActions.Interaction.OnRecipeOpened(recipeIndex))
         },
@@ -74,7 +76,7 @@ fun RecipeDetailScreenRoot(
 private fun RecipeDetailScreen(
     recipe: Recipe,
     isDetailLoading: Boolean,
-    detailError: String?,
+    detailFailed: Boolean,
     onRetryDetails: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -84,7 +86,7 @@ private fun RecipeDetailScreen(
                 title = { Text(recipe.title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 }
             )
@@ -103,7 +105,7 @@ private fun RecipeDetailScreen(
             ) {
                 AssistChip(
                     onClick = {},
-                    label = { Text("${recipe.prepTimeMinutes} min") },
+                    label = { Text(stringResource(R.string.prep_time_minutes, recipe.prepTimeMinutes)) },
                     leadingIcon = {
                         Icon(
                             Icons.Default.Schedule,
@@ -122,7 +124,7 @@ private fun RecipeDetailScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            SectionTitle("Ingredients from your pantry")
+            SectionTitle(stringResource(R.string.ingredients_from_pantry))
             recipe.usedIngredients.forEach { ingredient ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -135,7 +137,7 @@ private fun RecipeDetailScreen(
             }
 
             if (recipe.missingIngredients.isNotEmpty()) {
-                SectionTitle("You'll also need")
+                SectionTitle(stringResource(R.string.you_will_also_need))
                 recipe.missingIngredients.forEach { ingredient ->
                     Text(
                         text = "• ${ingredient.display}",
@@ -146,7 +148,7 @@ private fun RecipeDetailScreen(
                 }
             }
 
-            SectionTitle("Instructions")
+            SectionTitle(stringResource(R.string.instructions))
             if (recipe.steps.isEmpty() && isDetailLoading) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -155,21 +157,21 @@ private fun RecipeDetailScreen(
                     CircularProgressIndicator(modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Writing the instructions on-device…",
+                        text = stringResource(R.string.writing_instructions),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            if (recipe.steps.isEmpty() && !isDetailLoading && detailError != null) {
+            if (recipe.steps.isEmpty() && !isDetailLoading && detailFailed) {
                 Text(
-                    text = detailError,
+                    text = stringResource(R.string.instructions_failed),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
                 Button(onClick = onRetryDetails) {
-                    Text("Retry")
+                    Text(stringResource(R.string.retry))
                 }
             }
             recipe.steps.forEachIndexed { index, step ->
@@ -196,7 +198,7 @@ private fun RecipeDetailScreen(
             }
 
             if (recipe.variants.isNotEmpty()) {
-                SectionTitle("Variants")
+                SectionTitle(stringResource(R.string.variants))
                 recipe.variants.forEach { variant ->
                     Text(
                         text = "• $variant",

@@ -3,7 +3,8 @@
 
 Legge scripts/ingredient_labels.txt, calcola l'embedding di ogni label con il
 text encoder open_clip (stesso spazio dell'image encoder TFLite bundlato negli
-assets) e scrive app/src/main/assets/clip/label_embeddings.json.
+assets) e scrive app/src/main/assets/clip/label_embeddings.json, con i nomi
+italiani da scripts/ingredient_names_it.txt per i device in italiano.
 
 Con --verify-image controlla anche la parità tra l'image encoder TFLite e
 quello open_clip su un'immagine di test (cosine > 0.99 atteso).
@@ -25,6 +26,7 @@ import open_clip
 
 ROOT = Path(__file__).resolve().parent.parent
 LABELS_FILE = ROOT / "scripts" / "ingredient_labels.txt"
+NAMES_IT_FILE = ROOT / "scripts" / "ingredient_names_it.txt"
 OUT_FILE = ROOT / "app" / "src" / "main" / "assets" / "clip" / "label_embeddings.json"
 TFLITE_FILE = ROOT / "app" / "src" / "main" / "assets" / "clip" / "mobileclip_s2_image.tflite"
 
@@ -64,6 +66,27 @@ def load_labels() -> tuple[list[str], list[str], list[bool]]:
     return labels, displays, distractors
 
 
+def load_italian_names(displays: list[str], distractors: list[bool]) -> list[str]:
+    """Nome italiano per ogni label, cercato per display name inglese.
+
+    Il matching resta sulle label inglesi (il text encoder è addestrato su
+    caption inglesi): l'italiano è solo il nome riportato in UI e nei prompt.
+    Ogni display di un ingrediente deve avere la sua traduzione; i distrattori
+    non vengono mai mostrati e restano in inglese.
+    """
+    names = {}
+    for line in NAMES_IT_FILE.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        english, _, italian = line.partition("|")
+        names[english.strip()] = italian.strip()
+    missing = sorted({d for d, x in zip(displays, distractors) if not x and not names.get(d)})
+    if missing:
+        sys.exit(f"Manca la traduzione in {NAMES_IT_FILE.name} per: {', '.join(missing)}")
+    return [names.get(d, d) for d in displays]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--verify-image", type=Path, default=None)
@@ -72,6 +95,7 @@ def main() -> None:
     ensure_tflite_model()
 
     labels, displays, distractors = load_labels()
+    displays_it = load_italian_names(displays, distractors)
     print(f"{len(labels)} label ({sum(distractors)} distrattori) da {LABELS_FILE.name}")
 
     model, _, preprocess = open_clip.create_model_and_transforms(MODEL, pretrained=PRETRAINED)
@@ -94,6 +118,7 @@ def main() -> None:
         "dim": len(embeddings[0]),
         "labels": labels,
         "display": displays,
+        "display_it": displays_it,
         "distractors": distractors,
         "embeddings": [[round(v, 6) for v in e] for e in embeddings],
     }))

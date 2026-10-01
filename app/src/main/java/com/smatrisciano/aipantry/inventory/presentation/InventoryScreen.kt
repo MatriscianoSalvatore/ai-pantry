@@ -35,11 +35,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.smatrisciano.aipantry.R
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.inventory.presentation.InventoryActions.Interaction
 import com.smatrisciano.aipantry.inventory.presentation.InventoryActions.Navigation
@@ -74,9 +76,9 @@ private fun InventoryScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("AI Pantry", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.app_name), fontWeight = FontWeight.Bold)
                         Text(
-                            text = "Cook from your fridge · 100% on-device",
+                            text = stringResource(R.string.inventory_subtitle),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -85,7 +87,7 @@ private fun InventoryScreen(
                 actions = {
                     if (!state.isEmpty) {
                         IconButton(onClick = { onAction(Interaction.OnClearAllClick) }) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = "Clear all")
+                            Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.clear_all))
                         }
                     }
                 }
@@ -112,7 +114,7 @@ private fun InventoryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (state.fridgeItems.isNotEmpty()) {
-                        item { SectionHeader("🧊 Fridge") }
+                        item { SectionHeader(stringResource(R.string.section_fridge)) }
                         items(state.fridgeItems, key = { it.name }) { ingredient ->
                             IngredientRow(
                                 ingredient = ingredient,
@@ -121,7 +123,7 @@ private fun InventoryScreen(
                         }
                     }
                     if (state.pantryItems.isNotEmpty()) {
-                        item { SectionHeader("🗄️ Pantry") }
+                        item { SectionHeader(stringResource(R.string.section_pantry)) }
                         items(state.pantryItems, key = { it.name }) { ingredient ->
                             IngredientRow(
                                 ingredient = ingredient,
@@ -147,12 +149,12 @@ private fun InventoryScreen(
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("What can I cook? (${state.totalCount})")
+                        Text(stringResource(R.string.what_can_i_cook_count, state.totalCount))
                     }
                     FilledTonalButton(onClick = { onAction(Navigation.GoToCapture) }) {
                         Icon(Icons.Default.PhotoCamera, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Scan")
+                        Text(stringResource(R.string.scan))
                     }
                 }
             }
@@ -184,7 +186,12 @@ private fun AiStatusBanner(state: InventoryState) {
             }
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = state.aiStatusLabel,
+                text = when (state.aiStatus) {
+                    AiStatus.READY -> stringResource(R.string.ai_status_ready, state.modelName)
+                    AiStatus.DOWNLOADING -> stringResource(R.string.ai_status_downloading, state.modelName)
+                    AiStatus.PREPARING -> stringResource(R.string.ai_status_preparing, state.modelName)
+                    AiStatus.FAILED -> stringResource(R.string.ai_status_failed)
+                },
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.weight(1f)
             )
@@ -242,7 +249,10 @@ private fun IngredientRow(
                 }
             }
             IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Close, contentDescription = "Remove ${ingredient.name}")
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = stringResource(R.string.remove_ingredient, ingredient.name)
+                )
             }
         }
     }
@@ -261,13 +271,13 @@ private fun EmptyPantry(
         Text(text = "📷🥕", style = MaterialTheme.typography.displayMedium)
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Your pantry is empty",
+            text = stringResource(R.string.empty_pantry_title),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Take a photo of your fridge and pantry.\nIngredients are detected on-device — photos never leave your phone.",
+            text = stringResource(R.string.empty_pantry_body),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -276,7 +286,7 @@ private fun EmptyPantry(
         Button(onClick = onScanClick) {
             Icon(Icons.Default.PhotoCamera, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Scan my fridge")
+            Text(stringResource(R.string.scan_my_fridge))
         }
     }
 }

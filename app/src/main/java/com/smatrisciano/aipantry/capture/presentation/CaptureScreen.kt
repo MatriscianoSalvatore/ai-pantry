@@ -72,6 +72,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -79,6 +81,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.smatrisciano.aipantry.R
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Interaction
@@ -147,7 +150,7 @@ private fun CaptureScreen(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.back),
                 tint = Color.White
             )
         }
@@ -210,7 +213,7 @@ private fun CameraContent(
     state.capturedPhoto?.let { photo ->
         Image(
             bitmap = photo.asImageBitmap(),
-            contentDescription = "Captured photo",
+            contentDescription = stringResource(R.string.captured_photo),
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
@@ -240,7 +243,11 @@ private fun CameraContent(
                 color = Color.Black.copy(alpha = 0.6f)
             ) {
                 Text(
-                    text = "${state.accumulated.size} ingredients in this scan session · tap to review",
+                    text = pluralStringResource(
+                        R.plurals.scan_session_count,
+                        state.accumulated.size,
+                        state.accumulated.size
+                    ),
                     color = Color.White,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -251,7 +258,12 @@ private fun CameraContent(
 
         if (state.error != null) {
             DetectionError(
-                message = state.error,
+                message = stringResource(
+                    when (state.error) {
+                        CaptureError.NO_INGREDIENTS -> R.string.error_no_ingredients
+                        CaptureError.DETECTION_FAILED -> R.string.error_detection_failed
+                    }
+                ),
                 onRetry = { onAction(Interaction.OnRetryClick) }
             )
         } else {
@@ -289,18 +301,20 @@ private fun CameraContent(
                 ) {
                     Icon(
                         imageVector = Icons.Default.PhotoLibrary,
-                        contentDescription = "Pick from gallery",
+                        contentDescription = stringResource(R.string.pick_from_gallery),
                         tint = Color.White
                     )
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = if (state.isAnalyzing) {
-                    "Detecting ingredients on-device…"
-                } else {
-                    "Point at your ${if (state.target == ScanTarget.FRIDGE) "fridge" else "pantry"} and shoot"
-                },
+                text = stringResource(
+                    when {
+                        state.isAnalyzing -> R.string.detecting_ingredients
+                        state.target == ScanTarget.FRIDGE -> R.string.point_at_fridge
+                        else -> R.string.point_at_pantry
+                    }
+                ),
                 color = Color.White,
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.bodyMedium
@@ -330,7 +344,7 @@ private fun DetectionError(
         }
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = onRetry) {
-            Text("Take another photo")
+            Text(stringResource(R.string.take_another_photo))
         }
     }
 }
@@ -344,13 +358,13 @@ private fun TargetSelector(
         FilterChip(
             selected = selected == ScanTarget.FRIDGE,
             onClick = { onSelect(ScanTarget.FRIDGE) },
-            label = { Text("Fridge") },
+            label = { Text(stringResource(R.string.fridge)) },
             leadingIcon = { Icon(Icons.Default.Kitchen, contentDescription = null) }
         )
         FilterChip(
             selected = selected == ScanTarget.PANTRY,
             onClick = { onSelect(ScanTarget.PANTRY) },
-            label = { Text("Pantry") },
+            label = { Text(stringResource(R.string.pantry)) },
             leadingIcon = { Icon(Icons.Default.ShoppingBasket, contentDescription = null) }
         )
     }
@@ -393,12 +407,12 @@ private fun DetectionResults(
             .padding(bottom = 24.dp)
     ) {
         Text(
-            text = "Ingredients detected",
+            text = stringResource(R.string.ingredients_detected),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = "Engine: ${state.engineName} · 100% on-device",
+            text = stringResource(R.string.detection_engine, state.engineName),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -422,14 +436,14 @@ private fun DetectionResults(
                 onClick = { onAction(Interaction.OnScanAnotherClick) },
                 modifier = Modifier.weight(1f)
             ) {
-                Text("Scan another")
+                Text(stringResource(R.string.scan_another))
             }
             Button(
                 onClick = { onAction(Interaction.OnAddToPantryClick) },
                 enabled = !state.isSaving && state.accumulated.isNotEmpty(),
                 modifier = Modifier.weight(1f)
             ) {
-                Text("Add to pantry (${state.accumulated.size})")
+                Text(stringResource(R.string.add_to_pantry_count, state.accumulated.size))
             }
         }
     }
@@ -475,7 +489,10 @@ private fun DetectionRow(
                 }
             }
             IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Close, contentDescription = "Remove ${detection.name}")
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = stringResource(R.string.remove_ingredient, detection.name)
+                )
             }
         }
     }
@@ -491,14 +508,14 @@ private fun PermissionRequest(onRequest: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Camera access is needed to scan your fridge and pantry.\nPhotos never leave your device.",
+            text = stringResource(R.string.camera_permission_rationale),
             color = Color.White,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyLarge
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onRequest) {
-            Text("Grant camera access")
+            Text(stringResource(R.string.grant_camera_access))
         }
     }
 }

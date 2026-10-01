@@ -6,10 +6,12 @@ import android.util.Log
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
+import com.smatrisciano.aipantry.core.domain.AppLanguage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.tensorflow.lite.Interpreter
@@ -43,9 +45,15 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
         val distractors: List<Boolean> = emptyList(),
         // Nome mostrato in UI: più label specifiche ("lactose-free milk",
         // "whole milk carton") possono confluire nello stesso nome ("milk")
-        val display: List<String> = emptyList()
+        val display: List<String> = emptyList(),
+        // Gli stessi nomi in italiano (scripts/ingredient_names_it.txt): il
+        // matching resta sulle label inglesi, cambia solo il nome riportato
+        @SerialName("display_it") val displayIt: List<String> = emptyList()
     ) {
-        fun displayName(i: Int): String = display.getOrElse(i) { labels[i] }
+        fun displayName(i: Int, language: AppLanguage): String = when (language) {
+            AppLanguage.IT -> displayIt.getOrNull(i) ?: display.getOrElse(i) { labels[i] }
+            AppLanguage.EN -> display.getOrElse(i) { labels[i] }
+        }
     }
 
     private val labelSpace: LabelSpace by lazy {
@@ -110,11 +118,12 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
             }
             Log.i(TAG, "${crops.size} crops in ${System.currentTimeMillis() - start}ms")
             val distractors = labelSpace.distractors
+            val language = AppLanguage.current()
             bestScore.indices
                 .filter { distractors.getOrElse(it) { false }.not() && bestScore[it] >= MIN_PROB }
                 // Label diverse con lo stesso display name (es. le varianti di
                 // latte) collassano in un risultato solo, col punteggio migliore
-                .groupBy { labelSpace.displayName(it) }
+                .groupBy { labelSpace.displayName(it, language) }
                 .map { (name, indices) -> name to indices.maxOf { bestScore[it] } }
                 .sortedByDescending { (_, score) -> score }
                 .take(MAX_RESULTS)

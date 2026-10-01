@@ -21,18 +21,19 @@ import kotlinx.serialization.json.JsonPrimitive
 object RecipeJsonParser {
 
     // Alias snake_case: gli LLM piccoli non rispettano sempre il camelCase richiesto.
+    // Alias italiani: col prompt in italiano il modello a volte traduce anche le chiavi.
     // steps/variants come JsonElement: il modello a volte emette oggetti
     // ([{"step": "..."}]) invece di stringhe.
     @Serializable
     private data class RecipeDto(
-        val title: String = "",
-        @JsonNames("why_suitable", "reason") val whySuitable: String = "",
-        @JsonNames("prep_time_minutes", "prepTime", "prep_time") val prepTimeMinutes: Int = 20,
-        val difficulty: String = "EASY",
-        @JsonNames("used_ingredients", "ingredients") val usedIngredients: List<JsonElement> = emptyList(),
+        @JsonNames("titolo") val title: String = "",
+        @JsonNames("why_suitable", "reason", "perche", "perché") val whySuitable: String = "",
+        @JsonNames("prep_time_minutes", "prepTime", "prep_time", "tempo") val prepTimeMinutes: Int = 20,
+        @JsonNames("difficolta", "difficoltà") val difficulty: String = "EASY",
+        @JsonNames("used_ingredients", "ingredients", "ingredienti") val usedIngredients: List<JsonElement> = emptyList(),
         @JsonNames("missing_ingredients") val missingIngredients: List<JsonElement> = emptyList(),
-        val steps: List<JsonElement> = emptyList(),
-        val variants: List<JsonElement> = emptyList()
+        @JsonNames("passaggi", "procedimento") val steps: List<JsonElement> = emptyList(),
+        @JsonNames("varianti") val variants: List<JsonElement> = emptyList()
     )
 
     private val json = Json {
@@ -58,9 +59,7 @@ object RecipeJsonParser {
                     title = dto.title,
                     whySuitable = dto.whySuitable,
                     prepTimeMinutes = dto.prepTimeMinutes.coerceIn(1, 600),
-                    difficulty = runCatching {
-                        Difficulty.valueOf(dto.difficulty.trim().uppercase())
-                    }.getOrDefault(Difficulty.EASY),
+                    difficulty = parseDifficulty(dto.difficulty),
                     usedIngredients = dto.usedIngredients.toIngredients(),
                     missingIngredients = dto.missingIngredients.toIngredients(),
                     steps = dto.steps.toCleanStrings(),
@@ -74,11 +73,20 @@ object RecipeJsonParser {
 
     @Serializable
     private data class DetailsDto(
-        @JsonNames("why_suitable", "reason") val whySuitable: String = "",
-        val ingredients: List<JsonElement> = emptyList(),
-        val steps: List<JsonElement> = emptyList(),
-        val variants: List<JsonElement> = emptyList()
+        @JsonNames("why_suitable", "reason", "perche", "perché") val whySuitable: String = "",
+        @JsonNames("ingredienti") val ingredients: List<JsonElement> = emptyList(),
+        @JsonNames("passaggi", "procedimento") val steps: List<JsonElement> = emptyList(),
+        @JsonNames("varianti") val variants: List<JsonElement> = emptyList()
     )
+
+    /** EASY/MEDIUM/HARD come chiesto, ma tollera la difficoltà tradotta in italiano. */
+    private fun parseDifficulty(raw: String): Difficulty =
+        when (raw.trim().lowercase()) {
+            "facile" -> Difficulty.EASY
+            "media", "medio" -> Difficulty.MEDIUM
+            "difficile" -> Difficulty.HARD
+            else -> runCatching { Difficulty.valueOf(raw.trim().uppercase()) }.getOrDefault(Difficulty.EASY)
+        }
 
     /** Completa la ricetta con quantità/steps/varianti dall'output del secondo stadio. */
     fun parseDetails(recipe: Recipe, rawOutput: String): Recipe {
@@ -156,14 +164,16 @@ object RecipeJsonParser {
         return RecipeIngredient(name = s)
     }
 
-    /** Converte tbsp/tsp/cup in g/ml approssimati; lascia invariato ciò che è già metrico. */
+    /** Converte tbsp/tsp/cup (e cucchiai/cucchiaini/tazze) in g/ml approssimati; lascia invariato ciò che è già metrico. */
     private fun toMetric(quantity: String): String {
         val m = imperialUnit.find(quantity) ?: return quantity
         val amount = m.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return quantity
-        val grams = when (m.groupValues[2].lowercase().removeSuffix("s")) {
-            "tbsp", "tablespoon" -> amount * 15
-            "tsp", "teaspoon" -> amount * 5
-            "cup" -> amount * 240
+        val unit = m.groupValues[2].lowercase()
+        val grams = when {
+            // "cucchiaino" prima di "cucchiai": il secondo è prefisso del primo
+            unit.startsWith("tsp") || unit.startsWith("teaspoon") || unit.startsWith("cucchiain") -> amount * 5
+            unit.startsWith("tbsp") || unit.startsWith("tablespoon") || unit.startsWith("cucchiai") -> amount * 15
+            unit.startsWith("cup") || unit.startsWith("tazz") -> amount * 240
             else -> return quantity
         }
         return "${grams.toInt()} g"
@@ -245,16 +255,21 @@ object RecipeJsonParser {
     }
 
     private val textKeys = listOf(
-        "step", "description", "text", "variant", "name", "instruction", "detail"
+        "step", "description", "text", "variant", "name", "instruction", "detail",
+        "passaggio", "descrizione", "testo", "variante", "nome"
     )
-    private val ingredientNameKeys = listOf("name", "ingredient", "item")
-    private val ingredientQtyKeys = listOf("quantity", "amount", "qty", "measure")
+    private val ingredientNameKeys = listOf("name", "ingredient", "item", "nome", "ingrediente")
+    private val ingredientQtyKeys = listOf("quantity", "amount", "qty", "measure", "quantita", "quantità", "dose")
     private val ingredientSeparator = Regex("""\s[-–:]\s""")
     // Quantità in testa: numero (anche frazione) + eventuale unità attaccata o staccata
     private val quantityPrefix =
-        Regex("""^\d+[\d/.,]*\s*(g|kg|ml|l|tbsps?|tsps?|tablespoons?|teaspoons?|cups?|pcs?|pieces?|cans?|packs?|cloves?|slices?|bunch(?:es)?)?\b""", RegexOption.IGNORE_CASE)
+        Regex(
+            """^\d+[\d/.,]*\s*(g|kg|ml|l|tbsps?|tsps?|tablespoons?|teaspoons?|cups?|pcs?|pieces?|cans?|packs?|cloves?|slices?|bunch(?:es)?|""" +
+                """cucchia(?:ini|ino|io|i)|tazz[ae]|pz|pezz[io]|spicch[io]|fett[ae]|lattin[ae]|confezion[ei]|mazz[oi])?\b""",
+            RegexOption.IGNORE_CASE
+        )
     private val imperialUnit =
-        Regex("""([\d.,]+)\s*(tbsps?|tsps?|tablespoons?|teaspoons?|cups?)""", RegexOption.IGNORE_CASE)
+        Regex("""([\d.,]+)\s*(tbsps?|tsps?|tablespoons?|teaspoons?|cups?|cucchia(?:ini|ino|io|i)|tazz[ae])""", RegexOption.IGNORE_CASE)
 
     private val leadingNumberRegex = Regex("""^\s*\d+[.)]\s*""")
 }

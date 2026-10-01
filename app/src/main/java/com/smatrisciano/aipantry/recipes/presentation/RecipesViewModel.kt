@@ -1,5 +1,6 @@
 package com.smatrisciano.aipantry.recipes.presentation
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
@@ -36,7 +37,7 @@ class RecipesViewModel(
 
     private fun generate() {
         _uiState.update {
-            it.copy(isGenerating = true, progressLog = emptyList(), recipes = emptyList(), error = null)
+            it.copy(isGenerating = true, progressLog = emptyList(), recipes = emptyList(), generationFailed = false)
         }
         viewModelScope.launch {
             inventory = inventoryRepository.observeInventory().first()
@@ -55,12 +56,8 @@ class RecipesViewModel(
                 }
             }.onFailure { error ->
                 if (error is CancellationException) throw error
-                _uiState.update {
-                    it.copy(
-                        isGenerating = false,
-                        error = error.message ?: "Recipe generation failed"
-                    )
-                }
+                Log.w(TAG, "Recipe generation failed", error)
+                _uiState.update { it.copy(isGenerating = false, generationFailed = true) }
             }
         }
     }
@@ -69,7 +66,7 @@ class RecipesViewModel(
     private fun loadDetails(index: Int) {
         val recipe = _uiState.value.recipes.getOrNull(index) ?: return
         if (recipe.steps.isNotEmpty() || _uiState.value.isDetailLoading) return
-        _uiState.update { it.copy(isDetailLoading = true, detailError = null) }
+        _uiState.update { it.copy(isDetailLoading = true, detailFailed = false) }
         viewModelScope.launch {
             runCatching { recipeGenerator.generateDetails(recipe, inventory) }
                 .onSuccess { detailed ->
@@ -84,13 +81,13 @@ class RecipesViewModel(
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
-                    _uiState.update {
-                        it.copy(
-                            isDetailLoading = false,
-                            detailError = error.message ?: "Couldn't generate the instructions"
-                        )
-                    }
+                    Log.w(TAG, "Recipe details generation failed", error)
+                    _uiState.update { it.copy(isDetailLoading = false, detailFailed = true) }
                 }
         }
+    }
+
+    private companion object {
+        const val TAG = "RecipesViewModel"
     }
 }

@@ -69,7 +69,7 @@ class LlmVisionIngredientDetector(
             topK = 40
         ).use { conversation ->
             conversation.sendMessage(
-                Contents.of(Content.Text(buildPrompt(target)), Content.ImageBytes(jpeg))
+                Contents.of(Content.Text(DetectionPrompt.build(target)), Content.ImageBytes(jpeg))
             ).text()
         }
 
@@ -97,19 +97,6 @@ class LlmVisionIngredientDetector(
     // Scope scollegato per il watchdog: i job che vi girano possono restare
     // bloccati su una chiamata GPU nativa senza trascinarsi la coroutine chiamante
     private val watchdogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    private fun buildPrompt(target: ScanTarget): String {
-        val place = if (target == ScanTarget.FRIDGE) "fridge" else "pantry"
-        // Niente campo confidence nell'output: il parser ha già un default e
-        // ogni campo in più sono token di decode che l'utente aspetta
-        return """
-            This is a photo of the inside of a $place.
-            Identify the food ingredients you can see, at most 15.
-            Respond with ONLY a JSON array (no markdown, no extra text):
-            [{"name": "short ingredient name", "quantity": "approximate quantity like '2 pcs' or '1 carton'"}]
-            Only include items you actually see. Use common English ingredient names.
-        """.trimIndent()
-    }
 
     // A 768px lato lungo produce fino a ~2400 patch nel vision encoder (quasi
     // il limite 2520) e satura la RAM su device con poco margine, causando un

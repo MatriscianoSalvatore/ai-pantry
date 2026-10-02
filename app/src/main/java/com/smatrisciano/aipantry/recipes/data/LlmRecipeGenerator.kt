@@ -41,13 +41,16 @@ class LlmRecipeGenerator(
         engineHolder.acquire(model, modelRepository.modelFile(model))
 
         onProgress(GenerationProgress.Generating(ingredients.size))
-        val prompt = buildListPrompt(ingredients, AppLanguage.current())
-        val round = nextRound(prompt)
+        val language = AppLanguage.current()
+        val names = ingredients.map { it.name }
+        val round = nextRound(listKey(names, language))
+        val prompt = buildListPrompt(ingredientsFor(names, round), language)
         val recipes = withRetry { attempt ->
             if (attempt > 0) onProgress(GenerationProgress.Retrying)
             val rawOutput = generateChecked(model, prompt, seedFor(round, attempt))
             Log.d(TAG, "raw list output: $rawOutput")
-            RecipeJsonParser.parse(rawOutput)
+            val parsed = RecipeJsonParser.parse(rawOutput)
+            if (language == AppLanguage.IT) soundRecipes(parsed, lastAttempt = attempt == MAX_ATTEMPTS - 1) else parsed
         }
 
         // Missing ingredients aren't decided by the model (unreliable): anything a
@@ -162,14 +165,59 @@ class LlmRecipeGenerator(
     /**
      * With a fixed seed the output is deterministic (bit-identical on CPU):
      * "Regenerate" and the retries would always give the same answer. So every new
-     * request for the same prompt moves on to seeds not used yet, starting from 1.
+     * request with the same key (a recipe's details prompt, or an ingredient set
+     * for the lists) moves on to seeds not used yet, starting from 1.
      */
-    private val promptRounds = mutableMapOf<String, Int>()
+    private val rounds = mutableMapOf<String, Int>()
 
-    private fun nextRound(prompt: String): Int = synchronized(promptRounds) {
-        val round = promptRounds.getOrDefault(prompt, 0)
-        promptRounds[prompt] = round + 1
+    private fun nextRound(key: String): Int = synchronized(rounds) {
+        val round = rounds.getOrDefault(key, 0)
+        rounds[key] = round + 1
         round
+    }
+
+    /** Same ingredients in any order, same language: the same sequence of lists. */
+    private fun listKey(names: List<String>, language: AppLanguage): String =
+        "$language|" + names.map { it.lowercase() }.sorted().joinToString("|")
+
+    /**
+     * A new seed alone isn't enough: at this temperature a 2B model keeps going back
+     * to the same few dishes, and from the third list on it mostly repeats itself.
+     * What steers it is the ingredients it is given, so every list after the first
+     * gets a different, deterministic two thirds of the inventory (all of it when the
+     * inventory is small), in a different order. Naming the dishes already shown and
+     * asking to avoid them doesn't work: a 2B model copies them instead.
+     */
+    private fun ingredientsFor(names: List<String>, round: Int): List<String> {
+        if (round == 0) return names
+        val keep = maxOf(minOf(names.size, MIN_LIST_INGREDIENTS), (names.size * LIST_SHARE_PERCENT + 99) / 100)
+        return names.sortedBy { mix32(it.lowercase().hashCode() + round * GOLDEN_RATIO_32) }.take(keep)
+    }
+
+    // MurmurHash3's finalizer: nearby inputs (the same name, the next round) land far apart
+    private fun mix32(value: Int): Int {
+        var h = value
+        h = h xor (h ushr 16)
+        h *= 0x85EBCA6B.toInt()
+        h = h xor (h ushr 13)
+        h *= 0xC2B2AE35.toInt()
+        return h xor (h ushr 16)
+    }
+
+    /**
+     * Tidies the titles and drops the dishes that don't hold together (see
+     * [RecipeTitleRules]). With fewer than [MIN_SOUND_RECIPES] left the attempt
+     * fails and the next seed is tried, except on the last attempt.
+     */
+    private fun soundRecipes(recipes: List<Recipe>, lastAttempt: Boolean): List<Recipe> {
+        val (odd, sound) = recipes
+            .map { it.copy(title = RecipeTitleRules.tidy(it.title)) }
+            .partition { RecipeTitleRules.isOddCombination(it.title) }
+        if (odd.isNotEmpty()) Log.d(TAG, "dropped odd recipes: ${odd.map { it.title }}")
+        check(sound.size >= MIN_SOUND_RECIPES || (lastAttempt && sound.isNotEmpty())) {
+            "Only ${sound.size} sound recipes"
+        }
+        return sound
     }
 
     // Starts at 1: for the runtime, seed 0 and seed 1 give the same output
@@ -177,8 +225,8 @@ class LlmRecipeGenerator(
 
     // JSON keys and difficulty values stay in English in both languages: they
     // are the contract with the parser, only the contents are translated
-    private fun buildListPrompt(ingredients: List<Ingredient>, language: AppLanguage): String {
-        val names = ingredients.joinToString(", ") { it.name }
+    private fun buildListPrompt(ingredientNames: List<String>, language: AppLanguage): String {
+        val names = ingredientNames.joinToString(", ")
         // Short prompt: fewer input tokens = less prefill = faster on CPU
         return when (language) {
             AppLanguage.EN -> """
@@ -189,7 +237,9 @@ class LlmRecipeGenerator(
             """
             // Without the title rule Gemma builds the title by listing the ingredients
             // ("Risotto ai funghi e riso" half of the time). Pushing for more creativity
-            // ("piatti non banali", "almeno uno al forno") makes it invent ingredients
+            // ("piatti non banali", "almeno uno al forno") or adding more title rules
+            // changes the dishes for the worse: the remaining slips are fixed in code
+            // (RecipeTitleRules)
             AppLanguage.IT -> """
                 Ingredienti: $names.
                 Proponi 4 ricette diverse tra loro (primi, secondi, contorni).
@@ -255,6 +305,15 @@ class LlmRecipeGenerator(
     private companion object {
         const val TAG = "LlmRecipeGenerator"
         const val MAX_ATTEMPTS = 4
+
+        // A list with fewer dishes than this after dropping the odd ones is regenerated
+        const val MIN_SOUND_RECIPES = 3
+        const val GOLDEN_RATIO_32 = -0x61C88647 // 0x9E3779B9, spreads consecutive rounds apart
+
+        // Share of the inventory each list after the first is built from, never below
+        // MIN_LIST_INGREDIENTS (or the whole inventory, when it is smaller than that)
+        const val LIST_SHARE_PERCENT = 65
+        const val MIN_LIST_INGREDIENTS = 8
 
         // Beyond this time the generation is considered stuck (degraded GPU):
         // the CPU is forced and the call retried

@@ -144,8 +144,8 @@ object RecipeJsonParser {
             .distinctBy { it.name.lowercase() }
 
     /**
-     * The model sometimes marks an ingredient it assumes is at home as "(implicito)" /
-     * "(implicit)": a note to itself, not something to show.
+     * The model sometimes marks an ingredient it assumes is at home as "(implicito)",
+     * "(presunto)" or "(implicit)": a note to itself, not something to show.
      */
     private fun stripImplicitLabel(text: String): String =
         text.replace(implicitLabel, "").replace(Regex("\\s{2,}"), " ").trim().trimEnd('-', ',').trim()
@@ -282,7 +282,11 @@ object RecipeJsonParser {
         Regex("""([\d.,]+)\s*(tbsps?|tsps?|tablespoons?|teaspoons?|cups?|cucchia(?:ini|ino|io|i)|tazz[ae])""", RegexOption.IGNORE_CASE)
 
     private val leadingNumberRegex = Regex("""^\s*\d+[.)]\s*""")
-    // "(implicito)", "[implicit]" or a bare "implicito" left as the quantity
+    // "(implicito)", "(presunto)", "[implicit]" or a bare "implicito" left as the quantity
     private val implicitLabel =
-        Regex("""[(\[]\s*(?:implicit[oaie]?|implied|sottintes[oaie])\s*[)\]]|\b(?:implicit[oaie]?|implied)\b""", RegexOption.IGNORE_CASE)
+        Regex(
+            """[(\[]\s*(?:implicit[oaie]?|implied|sottintes[oaie]|presunt[oaie]|presumed|assumed)\s*[)\]]|""" +
+                """\b(?:implicit[oaie]?|implied|presunt[oaie])\b""",
+            RegexOption.IGNORE_CASE
+        )
 }

@@ -240,6 +240,18 @@ class ModelRepository(
         }
     }
 
+    /** The XNNPack caches LiteRT-LM keeps next to [model]'s file (see [isNeeded]). */
+    fun cacheFiles(model: LlmModel): List<File> {
+        val file = modelFile(model)
+        return file.parentFile
+            ?.listFiles { other ->
+                other.name.startsWith("${file.name}.") && !other.name.endsWith(".assembling") &&
+                    !other.name.endsWith(".copying")
+            }
+            ?.toList()
+            .orEmpty()
+    }
+
     /**
      * A file of the models folder still in use: a model of the catalog, the copy in
      * progress of one that isn't there yet or, next to one that is, the XNNPack caches

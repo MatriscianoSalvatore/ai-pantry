@@ -73,6 +73,15 @@ class LlmEngineHolder(private val context: Context) {
 
     fun currentBackendIsGpu(): Boolean = engineIsGpu
 
+    /** The model is in memory, ready to answer. */
+    fun isLoaded(): Boolean = engine != null
+
+    /** Threads the CPU backend runs on. */
+    val cpuThreads: Int get() = cpuThreadCount
+
+    /** The GPU failed with [model] on this device: from then on the CPU runs it. */
+    fun isGpuDisabled(model: LlmModel): Boolean = isGpuBroken(model)
+
     /** Throwaway conversation on the active engine, with the requested sampling parameters. */
     fun createConversation(
         model: LlmModel,

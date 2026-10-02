@@ -25,6 +25,8 @@ import com.smatrisciano.aipantry.capture.presentation.CaptureScreenRoot
 import com.smatrisciano.aipantry.core.navigation.Destination
 import com.smatrisciano.aipantry.core.navigation.NavArgument
 import com.smatrisciano.aipantry.core.presentation.theme.AiPantryTheme
+import com.smatrisciano.aipantry.diagnostics.presentation.DiagnosticsActions
+import com.smatrisciano.aipantry.diagnostics.presentation.DiagnosticsScreenRoot
 import com.smatrisciano.aipantry.inventory.presentation.InventoryActions
 import com.smatrisciano.aipantry.inventory.presentation.InventoryScreenRoot
 import com.smatrisciano.aipantry.recipes.presentation.RecipeDetailScreenRoot
@@ -79,6 +81,18 @@ private fun AiPantryNavHost() {
                             navController.navigate(Destination.CaptureRoutes.graphRoot.route)
                         InventoryActions.Navigation.GoToRecipes ->
                             navController.navigate(Destination.RecipeRoutes.graphRoot.route)
+                        InventoryActions.Navigation.GoToDiagnostics ->
+                            navController.navigate(Destination.DiagnosticsRoutes.graphRoot.route)
+                    }
+                }
+            )
+        }
+
+        composable(Destination.DiagnosticsRoutes.graphRoot.route) {
+            DiagnosticsScreenRoot(
+                onNavigation = { navigation ->
+                    when (navigation) {
+                        DiagnosticsActions.Navigation.GoBack -> navController.popBackStack()
                     }
                 }
             )

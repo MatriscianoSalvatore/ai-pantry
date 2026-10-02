@@ -70,9 +70,43 @@ interface RecipeSession {
     fun close()
 }
 
+/** A list kept in memory, as the diagnostics page shows it. */
+data class CachedList(
+    val ingredientCount: Int,
+    val round: Int,
+    val status: ListStatus,
+    /** Shown on screen at least once; otherwise it was written ahead of time. */
+    val opened: Boolean,
+    /** The list for the ingredients in the kitchen now. */
+    val forCurrentInventory: Boolean,
+    val recipes: List<CachedRecipe>
+)
+
+data class CachedRecipe(
+    val title: String,
+    val details: DetailsStatus,
+    /** Part of the details written before an interruption, the rest still to come. */
+    val partial: Boolean
+)
+
+/** What the model is writing for the recipes right now. */
+sealed interface RecipeWork {
+    data object Idle : RecipeWork
+    data class WritingList(val round: Int) : RecipeWork
+    data class WritingDetails(val title: String) : RecipeWork
+}
+
 interface RecipeRepository {
     /** Engine name shown in the UI (e.g. "Gemma 4 E2B · LiteRT"). */
     val engineName: String
+
+    /** Every list kept in memory, most recently used first. */
+    val cache: Flow<List<CachedList>>
+
+    val work: Flow<RecipeWork>
+
+    /** Forgets every list and its details: the next list for any inventory is its first again. */
+    fun clearCache()
 
     /**
      * The recipes for [ingredients]: the list already written for them if there is

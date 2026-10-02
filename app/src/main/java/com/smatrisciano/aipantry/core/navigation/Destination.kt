@@ -16,6 +16,12 @@ sealed interface Destination {
         }
     }
 
+    abstract class DiagnosticsRoutes {
+        companion object {
+            val graphRoot = Route("diagnostics")
+        }
+    }
+
 
     abstract class RecipeRoutes {
         companion object {

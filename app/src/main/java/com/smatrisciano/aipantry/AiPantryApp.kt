@@ -4,6 +4,7 @@ import android.app.Application
 import com.smatrisciano.aipantry.capture.data.di.captureModule
 import com.smatrisciano.aipantry.core.data.ai.BackgroundAiWork
 import com.smatrisciano.aipantry.core.di.coreModule
+import com.smatrisciano.aipantry.diagnostics.data.di.diagnosticsModule
 import com.smatrisciano.aipantry.inventory.data.di.inventoryModule
 import com.smatrisciano.aipantry.recipes.data.di.recipesModule
 import org.koin.android.ext.android.get
@@ -22,7 +23,8 @@ class AiPantryApp : Application() {
                 coreModule,
                 inventoryModule,
                 captureModule,
-                recipesModule
+                recipesModule,
+                diagnosticsModule
             )
         }
         get<BackgroundAiWork>().watchVisibility(this)

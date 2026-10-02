@@ -9,6 +9,8 @@ import com.smatrisciano.aipantry.core.data.ai.ModelStatus
 import com.smatrisciano.aipantry.core.domain.AppLanguage
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.inventory.domain.repository.InventoryRepository
+import com.smatrisciano.aipantry.recipes.domain.CachedList
+import com.smatrisciano.aipantry.recipes.domain.CachedRecipe
 import com.smatrisciano.aipantry.recipes.domain.DetailsStatus
 import com.smatrisciano.aipantry.recipes.domain.DetailsUpdate
 import com.smatrisciano.aipantry.recipes.domain.GenerationProgress
@@ -22,6 +24,7 @@ import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.domain.RecipeList
 import com.smatrisciano.aipantry.recipes.domain.RecipeRepository
 import com.smatrisciano.aipantry.recipes.domain.RecipeSession
+import com.smatrisciano.aipantry.recipes.domain.RecipeWork
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -150,6 +153,7 @@ class RecipeRepositoryImpl(
 
     private val lists = MutableStateFlow<Map<String, StoredList>>(emptyMap())
     private val focus = MutableStateFlow<Focus?>(null)
+    private val running = MutableStateFlow<Work?>(null)
 
     /** Key of the list for the current inventory, the one written ahead. */
     private val inventoryKey = MutableStateFlow<String?>(null)
@@ -177,13 +181,58 @@ class RecipeRepositoryImpl(
                 .distinctUntilChanged()
                 // A new job cancels the running one and waits for it to stop
                 .collectLatest { work ->
-                    when (work) {
-                        is Work.WriteList -> writeList(work.listId)
-                        is Work.WriteDetails -> writeDetails(work.listId, work.recipeId)
-                        null -> {}
+                    running.value = work
+                    try {
+                        when (work) {
+                            is Work.WriteList -> writeList(work.listId)
+                            is Work.WriteDetails -> writeDetails(work.listId, work.recipeId)
+                            null -> {}
+                        }
+                    } finally {
+                        running.value = null
                     }
                 }
         }
+    }
+
+    override val cache: Flow<List<CachedList>> =
+        combine(lists, inventoryKey) { lists, inventoryKey ->
+            lists.values.sortedByDescending { it.usedAt }.map { list ->
+                CachedList(
+                    ingredientCount = list.ingredients.size,
+                    round = list.round,
+                    status = list.status,
+                    opened = list.opened,
+                    forCurrentInventory = list.key == inventoryKey,
+                    recipes = list.displayOrder().map { entry ->
+                        CachedRecipe(
+                            title = entry.recipe.title,
+                            details = entry.details.status,
+                            partial = entry.details.status == DetailsStatus.PENDING && entry.recipe.detailsSize() > 0
+                        )
+                    }
+                )
+            }
+        }
+
+    override val work: Flow<RecipeWork> =
+        combine(running, lists) { work, lists ->
+            val list = when (work) {
+                is Work.WriteList -> lists.values.firstOrNull { it.id == work.listId }
+                is Work.WriteDetails -> lists.values.firstOrNull { it.id == work.listId }
+                null -> null
+            }
+            when {
+                list == null -> RecipeWork.Idle
+                work is Work.WriteDetails -> list.entry(work.recipeId)?.let { RecipeWork.WritingDetails(it.recipe.title) }
+                    ?: RecipeWork.Idle
+                else -> RecipeWork.WritingList(list.round)
+            }
+        }.distinctUntilChanged()
+
+    // Whatever is being written stops too: with no list left, there is nothing to work on
+    override fun clearCache() {
+        lists.value = emptyMap()
     }
 
     override fun open(ingredients: List<Ingredient>): RecipeSession {

@@ -1,5 +1,6 @@
 package com.smatrisciano.aipantry.inventory.presentation
 
+import android.os.SystemClock
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -9,8 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -38,6 +38,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -61,7 +63,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -71,6 +77,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -157,7 +164,8 @@ private fun InventoryList(
         item(key = HEADER_KEY, contentType = "header") {
             InventoryHeader(
                 state = state,
-                onClearAllClick = { onAction(Interaction.OnClearAllClick) }
+                onClearAllClick = { onAction(Interaction.OnClearAllClick) },
+                onSecretTaps = { onAction(Navigation.GoToDiagnostics) }
             )
         }
         ingredientSection(R.string.fridge, Icons.Rounded.Kitchen, state.fridgeItems, onRemove)
@@ -173,6 +181,7 @@ private fun InventoryList(
 private fun InventoryHeader(
     state: InventoryState,
     onClearAllClick: () -> Unit,
+    onSecretTaps: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -188,7 +197,7 @@ private fun InventoryHeader(
                 .height(48.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BrandMark()
+            BrandMark(onSecretTaps = onSecretTaps)
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = stringResource(R.string.app_name),
@@ -232,13 +241,32 @@ private fun InventoryHeader(
     }
 }
 
-/** The app's mark: the AI gradient is reserved for it and for the moments the model works. */
+/**
+ * The app's mark: the AI gradient is reserved for it and for the moments the model works.
+ * Six quick taps on it open the hidden diagnostics page.
+ */
 @Composable
-private fun BrandMark() {
+private fun BrandMark(onSecretTaps: () -> Unit) {
+    var taps by remember { mutableIntStateOf(0) }
+    var lastTapAt by remember { mutableLongStateOf(0L) }
+    val openDiagnostics by rememberUpdatedState(onSecretTaps)
     Box(
         modifier = Modifier
             .size(40.dp)
-            .background(Brush.linearGradient(MaterialTheme.extendedColors.aiGradient), CircleShape),
+            .background(Brush.linearGradient(MaterialTheme.extendedColors.aiGradient), CircleShape)
+            // A bare gesture rather than a click: no ripple, nothing announced by screen
+            // readers, the page stays hidden
+            .pointerInput(Unit) {
+                detectTapGestures {
+                    val now = SystemClock.uptimeMillis()
+                    taps = if (now - lastTapAt <= SECRET_TAP_GAP_MILLIS) taps + 1 else 1
+                    lastTapAt = now
+                    if (taps == SECRET_TAPS) {
+                        taps = 0
+                        openDiagnostics()
+                    }
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
         // Same glyph as the launcher icon, with its amber sparkle
@@ -524,7 +552,8 @@ private fun EmptyInventory(
         ) {
             InventoryHeader(
                 state = state,
-                onClearAllClick = { onAction(Interaction.OnClearAllClick) }
+                onClearAllClick = { onAction(Interaction.OnClearAllClick) },
+                onSecretTaps = { onAction(Navigation.GoToDiagnostics) }
             )
             Spacer(modifier = Modifier.weight(1f))
             Column(
@@ -664,6 +693,10 @@ private val FloatingFoods = listOf(
 )
 
 private const val HEADER_KEY = 0
+
+// Like the build number in Android's settings: six taps, each within this gap of the last
+private const val SECRET_TAPS = 6
+private const val SECRET_TAP_GAP_MILLIS = 600L
 
 private val ScreenPadding = 20.dp
 private val GroupCorner = 20.dp

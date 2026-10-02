@@ -5,33 +5,39 @@ import android.util.Log
 import androidx.core.content.edit
 
 /**
- * How long the on-device waits usually take on this device, for the progress
- * bars: on-device inference exposes no real progress, so the bars simulate it
- * and need an expected duration. It starts from a default and learns from the
- * real durations (moving average, persisted), so the same bar fits a GPU or
- * Gemini Nano that answer in seconds and a CPU that takes a minute.
+ * What the on-device waits usually look like on this device, for the progress
+ * bars: how long the model takes to read a prompt before it writes anything, and
+ * how long its answers run. The bars follow what the model actually does (reading,
+ * then text written) and these are the yardsticks to measure it against. They
+ * start from defaults and learn from every run (moving average, persisted), so the
+ * same bar fits a GPU that answers in seconds and a CPU that takes a minute.
  */
 class WaitTimeEstimator(context: Context) {
 
-    // Defaults sized for a Pixel 7 running on CPU, the slowest case seen so far
-    // (detection measured at ~30 s); real measurements replace them
-    enum class Wait(val defaultMillis: Long) {
-        DETECTION(30_000),
-        RECIPES(60_000),
-        RECIPE_DETAILS(60_000)
+    // Defaults measured on a Pixel 7 running Gemma 4 E2B on CPU, the slowest case
+    // seen so far; real measurements replace them
+    enum class Measure(val default: Long) {
+        /** Milliseconds from sending a prompt to the first piece of the answer. */
+        PROMPT_READING_MILLIS(10_000),
+
+        /** Characters of one recipe in a list. */
+        LIST_RECIPE_CHARS(250),
+
+        /** Characters of a recipe's details. */
+        DETAILS_CHARS(2_200)
     }
 
     private val prefs = context.getSharedPreferences("wait_times", Context.MODE_PRIVATE)
 
-    fun expectedMillis(wait: Wait): Long = prefs.getLong(wait.name, wait.defaultMillis)
+    fun expected(measure: Measure): Long = prefs.getLong(measure.name, measure.default)
 
-    fun record(wait: Wait, millis: Long) {
-        val previous = prefs.getLong(wait.name, -1L)
+    fun record(measure: Measure, value: Long) {
+        val previous = prefs.getLong(measure.name, -1L)
         // The first real measurement replaces the default; after that, half old
         // and half new: it adapts in a couple of runs without chasing one outlier
-        val updated = if (previous < 0) millis else (previous + millis) / 2
-        prefs.edit { putLong(wait.name, updated) }
-        Log.i(TAG, "${wait.name} took ${millis}ms, next estimate ${updated}ms")
+        val updated = if (previous < 0) value else (previous + value) / 2
+        prefs.edit { putLong(measure.name, updated) }
+        Log.i(TAG, "${measure.name}: $value, next estimate $updated")
     }
 
     private companion object {

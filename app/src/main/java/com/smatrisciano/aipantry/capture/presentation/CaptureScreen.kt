@@ -24,15 +24,20 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
@@ -41,17 +46,20 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -87,6 +95,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -98,15 +107,22 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
@@ -133,11 +149,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.content.ContextCompat
@@ -147,6 +165,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.R
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
+import com.smatrisciano.aipantry.capture.domain.PhotoRegion
+import com.smatrisciano.aipantry.capture.domain.ScanProgress
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Interaction
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Navigation
@@ -157,7 +177,9 @@ import com.smatrisciano.aipantry.core.presentation.composables.WaitProgressBar
 import com.smatrisciano.aipantry.core.presentation.theme.extendedColors
 import com.smatrisciano.aipantry.core.presentation.utils.ObserveAsEvents
 import com.smatrisciano.aipantry.inventory.presentation.composables.ingredientEmoji
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
+import androidx.compose.ui.geometry.Size as DrawSize
 
 @Composable
 fun CaptureScreenRoot(
@@ -329,13 +351,26 @@ private fun CameraContent(
         }
     )
 
-    // Freeze frame: after the shot the photo is shown, not the live preview
+    // Freeze frame: after the shot the photo is shown, not the live preview. Cropped to
+    // fill the screen it loses its edges: while the model looks at it, it blurs into a
+    // backdrop and the whole photo sits in the frame (see Viewfinder)
     state.capturedPhoto?.let { photo ->
+        val backdrop by animateFloatAsState(
+            targetValue = if (state.isAnalyzing) 1f else 0f,
+            animationSpec = tween(BACKDROP_MILLIS),
+            label = "photoBackdrop"
+        )
         Image(
             bitmap = photo.asImageBitmap(),
             contentDescription = stringResource(R.string.captured_photo),
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(BackdropBlur * backdrop)
+                .drawWithContent {
+                    drawContent()
+                    drawRect(Color.Black.copy(alpha = BACKDROP_DIM * backdrop))
+                }
         )
     }
 
@@ -351,6 +386,8 @@ private fun CameraContent(
 
         Viewfinder(
             isAnalyzing = state.isAnalyzing,
+            photo = state.capturedPhoto,
+            scan = state.scan,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
@@ -543,64 +580,148 @@ private fun TargetSegment(
 }
 
 /**
- * Corner brackets framing the shot. While the model looks at the photo they take the AI
- * accent and a soft scan line sweeps through the frame: the "AI is looking" moment.
+ * Corner brackets framing the shot. While the model looks at the photo, the photo sits
+ * in the frame whole, whatever its shape, in brackets of the AI accent: the regions it
+ * is looking at are drawn on it, and what it has found so far pops up over it.
  */
 @Composable
 private fun Viewfinder(
     isAnalyzing: Boolean,
+    photo: Bitmap?,
+    scan: ScanProgress?,
     modifier: Modifier = Modifier
 ) {
-    val accent = MaterialTheme.extendedColors.aiGradient[1]
-    // Read only while drawing: the colour animation redraws without recomposing
-    val bracketColor = animateColorAsState(
-        targetValue = if (isAnalyzing) accent else Color.White.copy(alpha = 0.9f),
-        animationSpec = tween(400),
-        label = "bracketColor"
-    )
-
     Box(modifier = modifier) {
         AnimatedVisibility(
-            visible = isAnalyzing,
-            enter = fadeIn(tween(400)),
+            visible = !isAnalyzing,
+            enter = fadeIn(tween(250)),
             exit = fadeOut(tween(250)),
             modifier = Modifier.matchParentSize()
         ) {
-            ScanLine(color = accent, modifier = Modifier.fillMaxSize())
+            // Their line just inside the frame, so they touch its edges
+            Brackets(
+                color = Color.White.copy(alpha = 0.9f),
+                radius = BracketRadius,
+                offset = -BracketStroke / 2,
+                modifier = Modifier.fillMaxSize()
+            )
         }
-        Spacer(
-            modifier = Modifier
-                .matchParentSize()
-                .drawWithCache {
-                    val stroke = BracketStroke.toPx()
-                    val arm = BracketArm.toPx()
-                    val radius = BracketRadius.toPx()
-                    val inset = stroke / 2
-                    // Top-left corner only: the other three are its mirror images
-                    val corner = Path().apply {
-                        moveTo(inset, inset + arm)
-                        lineTo(inset, inset + radius)
-                        arcTo(
-                            rect = Rect(inset, inset, inset + 2 * radius, inset + 2 * radius),
-                            startAngleDegrees = 180f,
-                            sweepAngleDegrees = 90f,
-                            forceMoveTo = false
-                        )
-                        lineTo(inset + arm, inset)
-                    }
-                    val style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                    onDrawBehind {
-                        for (scaleX in MIRRORS) {
-                            for (scaleY in MIRRORS) {
-                                scale(scaleX, scaleY, pivot = center) {
-                                    drawPath(corner, bracketColor.value, style = style)
-                                }
-                            }
+        AnimatedVisibility(
+            visible = isAnalyzing && photo != null,
+            enter = fadeIn(tween(350)) + scaleIn(tween(350), initialScale = 1.04f),
+            exit = fadeOut(tween(250)),
+            modifier = Modifier.matchParentSize()
+        ) {
+            // Still the shot's photo while it fades out after the analysis
+            photo?.let { AnalyzedPhoto(photo = it, scan = scan, modifier = Modifier.fillMaxSize()) }
+        }
+    }
+}
+
+/**
+ * The photo the model is looking at, whole and in its own shape, centred in the
+ * space it has: the regions being looked at drawn on it, or a scan line sweeping it
+ * for detectors that look at the whole photo at once. Brackets frame it a little way
+ * out, their corners turning around the photo's own.
+ */
+@Composable
+private fun AnalyzedPhoto(
+    photo: Bitmap,
+    scan: ScanProgress?,
+    modifier: Modifier = Modifier
+) {
+    val accent = MaterialTheme.extendedColors.aiGradient[1]
+    val shape = RoundedCornerShape(PhotoCorner)
+    Box(
+        // Room for the brackets around the photo
+        modifier = modifier.padding(FrameGap + BracketStroke),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(modifier = Modifier.aspectRatio(photo.width.toFloat() / photo.height)) {
+            Image(
+                bitmap = photo.asImageBitmap(),
+                // The backdrop behind already describes the photo
+                contentDescription = null,
+                // The box has the photo's shape: nothing is cut
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(shape)
+            )
+            if (scan == null) {
+                ScanLine(
+                    color = accent,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(shape)
+                )
+            } else {
+                ScanRegions(
+                    regions = scan.activeRegions,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(shape)
+                )
+                FoundIngredients(
+                    found = scan.found,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp)
+                )
+            }
+            // Concentric with the photo's corners, FrameGap outside its edges
+            Brackets(
+                color = accent,
+                radius = PhotoCorner + FrameGap + BracketStroke / 2,
+                offset = FrameGap + BracketStroke / 2,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+/**
+ * Four rounded corner brackets around the space they are given: their line runs
+ * [offset] outside its edges (inside, when negative) and turns with [radius].
+ */
+@Composable
+private fun Brackets(
+    color: Color,
+    radius: Dp,
+    offset: Dp,
+    modifier: Modifier = Modifier
+) {
+    Spacer(
+        modifier = modifier.drawWithCache {
+            val stroke = BracketStroke.toPx()
+            val turn = radius.toPx()
+            val arm = turn + BracketStraight.toPx()
+            // Where the line runs, from the top-left corner of the space
+            val edge = -offset.toPx()
+            // Top-left corner only: the other three are its mirror images
+            val corner = Path().apply {
+                moveTo(edge, edge + arm)
+                lineTo(edge, edge + turn)
+                arcTo(
+                    rect = Rect(edge, edge, edge + 2 * turn, edge + 2 * turn),
+                    startAngleDegrees = 180f,
+                    sweepAngleDegrees = 90f,
+                    forceMoveTo = false
+                )
+                lineTo(edge + arm, edge)
+            }
+            val style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            onDrawBehind {
+                for (scaleX in MIRRORS) {
+                    for (scaleY in MIRRORS) {
+                        scale(scaleX, scaleY, pivot = center) {
+                            drawPath(corner, color, style = style)
                         }
                     }
                 }
-        )
-    }
+            }
+        }
+    )
 }
 
 /** A thin bright line with a soft glow band, sweeping up and down while the model works. */
@@ -715,10 +836,7 @@ private fun BottomControls(
                     )
                 }
 
-                ControlsMode.Analyzing -> AnalyzingCard(
-                    expectedMillis = state.analysisExpectedMillis,
-                    completed = state.analysisCompleted
-                )
+                ControlsMode.Analyzing -> AnalyzingCard(scan = state.scan)
 
                 ControlsMode.Idle -> IdleControls(
                     accumulatedCount = state.accumulated.size,
@@ -770,10 +888,7 @@ private fun DetectionError(
 }
 
 @Composable
-private fun AnalyzingCard(
-    expectedMillis: Long,
-    completed: Boolean
-) {
+private fun AnalyzingCard(scan: ScanProgress?) {
     GlassCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(
@@ -797,13 +912,144 @@ private fun AnalyzingCard(
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
-        WaitProgressBar(
-            expectedMillis = expectedMillis,
-            completed = completed,
-            modifier = Modifier.fillMaxWidth(),
+        if (scan != null) {
+            WaitProgressBar(
+                progress = scan.doneRegions.toFloat() / scan.totalRegions.coerceAtLeast(1),
+                modifier = Modifier.fillMaxWidth(),
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.25f),
+                textColor = Color.White
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.scan_regions_done, scan.doneRegions, scan.totalRegions),
+                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                color = Color.White.copy(alpha = 0.7f)
+            )
+        } else {
+            // A detector that looks at the whole photo at once can't tell how far it is
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp),
+                color = Color.White,
+                trackColor = Color.White.copy(alpha = 0.25f),
+                strokeCap = StrokeCap.Round,
+                gapSize = 0.dp
+            )
+        }
+    }
+}
+
+/**
+ * The regions of the photo the model is looking at right now, drawn over the whole
+ * photo: each fades in as the scan reaches it and out once done. As many at a time
+ * as the detector has workers. Their line runs just inside the region, rounded like
+ * the photo: along the photo's edges and around its corners it follows them exactly.
+ */
+@Composable
+private fun ScanRegions(
+    regions: List<PhotoRegion>,
+    modifier: Modifier = Modifier
+) {
+    val accent = MaterialTheme.extendedColors.aiGradient[1]
+    val outline = lerp(accent, Color.White, 0.35f)
+    // Not the effect's own scope: a region must finish fading out when the list changes again
+    val scope = rememberCoroutineScope()
+    val alphas = remember { mutableStateMapOf<PhotoRegion, Animatable<Float, AnimationVector1D>>() }
+    LaunchedEffect(regions) {
+        for (region in regions) {
+            if (region in alphas) continue
+            val alpha = Animatable(0f)
+            alphas[region] = alpha
+            scope.launch { alpha.animateTo(1f, tween(REGION_FADE_IN_MILLIS)) }
+        }
+        for ((region, alpha) in alphas.toList()) {
+            if (region in regions || alpha.targetValue == 0f) continue
+            scope.launch {
+                alpha.animateTo(0f, tween(REGION_FADE_OUT_MILLIS))
+                alphas.remove(region)
+            }
+        }
+    }
+    Canvas(modifier = modifier) {
+        val line = RegionStroke.toPx()
+        val corner = CornerRadius(PhotoCorner.toPx() - line / 2)
+        val stroke = Stroke(width = line)
+        for ((region, alpha) in alphas) {
+            val topLeft = Offset(region.left * size.width + line / 2, region.top * size.height + line / 2)
+            val regionSize = DrawSize(
+                (region.right - region.left) * size.width - line,
+                (region.bottom - region.top) * size.height - line
+            )
+            drawRoundRect(accent.copy(alpha = 0.1f * alpha.value), topLeft, regionSize, corner)
+            drawRoundRect(outline.copy(alpha = alpha.value), topLeft, regionSize, corner, style = stroke)
+        }
+    }
+}
+
+/**
+ * What the scan has found so far, as chips that pop up one at a time. In the order
+ * they turned up rather than by score, so a chip stays where it first appeared.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FoundIngredients(
+    found: List<DetectedIngredient>,
+    modifier: Modifier = Modifier
+) {
+    var names by remember { mutableStateOf(emptyList<String>()) }
+    LaunchedEffect(found) {
+        val current = found.map { it.name }
+        names = names.filter { it in current } + current.filterNot { it in names }
+    }
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        for (name in names) {
+            key(name) {
+                val appear = remember { Animatable(0f) }
+                LaunchedEffect(Unit) {
+                    appear.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow))
+                }
+                FoundChip(
+                    name = name,
+                    modifier = Modifier.graphicsLayer {
+                        alpha = appear.value.coerceIn(0f, 1f)
+                        scaleX = 0.7f + 0.3f * appear.value
+                        scaleY = 0.7f + 0.3f * appear.value
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** On dark glass, like the hint above the shutter: the photo shows through. */
+@Composable
+private fun FoundChip(name: String, modifier: Modifier = Modifier) {
+    val emoji = remember(name) { ingredientEmoji(name) }
+    Row(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.4f))
+            .border(1.dp, Color.White.copy(alpha = 0.16f), CircleShape)
+            .padding(start = 10.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = emoji,
+            // Platform default font: the glyph comes from the emoji font anyway
+            style = TextStyle(fontSize = 14.sp, lineHeight = 18.sp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelLarge,
             color = Color.White,
-            trackColor = Color.White.copy(alpha = 0.25f),
-            textColor = Color.White
+            maxLines = 1
         )
     }
 }
@@ -1270,13 +1516,27 @@ private val GroupedRadius = 20.dp
 private val RowDividerInset = 70.dp
 
 private val BracketStroke = 3.dp
-private val BracketArm = 30.dp
+// Straight part of a bracket, after its turn
+private val BracketStraight = 12.dp
 private val BracketRadius = 18.dp
+
+// The analysed photo's corners: the regions on it and the brackets around it turn with them
+private val PhotoCorner = 16.dp
+private val FrameGap = 6.dp
 private val MIRRORS = floatArrayOf(1f, -1f)
 
 private val ScanGlowHeight = 90.dp
 private val ScanLineStroke = 2.dp
 private const val SCAN_SWEEP_MILLIS = 1800
+
+// The photo behind the analysed one: blurred and dimmed, so the whole photo in the frame stands out
+private val BackdropBlur = 24.dp
+private const val BACKDROP_DIM = 0.5f
+private const val BACKDROP_MILLIS = 400
+
+private val RegionStroke = 2.5.dp
+private const val REGION_FADE_IN_MILLIS = 180
+private const val REGION_FADE_OUT_MILLIS = 350
 
 private fun takePhoto(
     context: Context,

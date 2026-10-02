@@ -41,6 +41,7 @@
     </plurals>
     <string name="analyzing_title">Riconosco gli ingredienti</string>
     <string name="analyzing_caption">On device · la foto resta sul telefono</string>
+    <string name="scan_regions_done">Zone analizzate: %1$d di %2$d</string>
     <plurals name="ingredients_found">
         <item quantity="one">%d ingrediente trovato</item>
         <item quantity="other">%d ingredienti trovati</item>
@@ -76,13 +77,15 @@
         <item quantity="other">Idee pensate per i tuoi %d ingredienti</item>
     </plurals>
     <string name="generating_title">Genero le ricette</string>
+    <string name="writing_recipe">Ricetta %1$d di %2$d</string>
+    <string name="looking_for_more_recipes">Cerco ancora qualche idea…</string>
     <string name="more_count">+%1$d</string>
 
     <!-- Recipe detail -->
     <string name="ingredients_from_pantry">Ingredienti dalla tua dispensa</string>
     <string name="you_will_also_need">Ti servirà anche</string>
     <string name="instructions">Procedimento</string>
-    <string name="writing_instructions">Genero la riceta…</string>
+    <string name="writing_instructions">Genero la ricetta…</string>
     <string name="instructions_failed">Non è stato possibile generare la ricetta</string>
     <string name="variants">Varianti</string>
     <string name="stat_time">Tempo</string>

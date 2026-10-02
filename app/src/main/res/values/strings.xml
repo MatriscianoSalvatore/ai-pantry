@@ -43,6 +43,7 @@
     </plurals>
     <string name="analyzing_title">Recognizing ingredients</string>
     <string name="analyzing_caption">On-device · the photo stays on your phone</string>
+    <string name="scan_regions_done">Areas scanned: %1$d of %2$d</string>
     <plurals name="ingredients_found">
         <item quantity="one">%d ingredient found</item>
         <item quantity="other">%d ingredients found</item>
@@ -78,6 +79,8 @@
         <item quantity="other">Ideas based on your %d ingredients</item>
     </plurals>
     <string name="generating_title">Creating your recipes</string>
+    <string name="writing_recipe">Recipe %1$d of %2$d</string>
+    <string name="looking_for_more_recipes">Looking for a few more ideas…</string>
     <string name="more_count">+%1$d</string>
 
     <!-- Recipe detail -->

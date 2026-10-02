@@ -21,13 +21,13 @@ sealed interface Destination {
         companion object {
             val graphRoot = Route("recipes")
             val list = Route("${graphRoot.route}/list")
-            val detail = Route("${graphRoot.route}/detail/{${NavArgument.RecipeIndex.argument}}")
+            val detail = Route("${graphRoot.route}/detail/{${NavArgument.RecipeId.argument}}")
 
-            fun detail(index: Int) = Route("${graphRoot.route}/detail/$index")
+            fun detail(recipeId: Int) = Route("${graphRoot.route}/detail/$recipeId")
         }
     }
 }
 
 enum class NavArgument(val argument: String) {
-    RecipeIndex("recipeIndex")
+    RecipeId("recipeId")
 }

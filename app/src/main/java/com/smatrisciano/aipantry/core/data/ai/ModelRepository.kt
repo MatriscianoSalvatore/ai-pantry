@@ -229,15 +229,29 @@ class ModelRepository(
 
     private fun isProvisioned(model: LlmModel): Boolean = modelFile(model).exists()
 
-    /** Removes models from previous app versions (e.g. after a catalog change). */
+    /** Removes models from previous app versions (e.g. after a catalog change), with their files. */
     private fun cleanupOrphanedFiles() {
-        val known = LlmCatalog.all.map { it.fileName }.toSet()
+        val known = LlmCatalog.all.map { it.fileName }
         modelsDir().listFiles()?.forEach { file ->
-            val baseName = file.name.removeSuffix(".assembling").removeSuffix(".copying")
-            if (baseName !in known) {
+            if (!isNeeded(file.name, known)) {
                 Log.i(TAG, "Deleting orphaned model file ${file.name} (${file.length()} bytes)")
                 file.delete()
             }
+        }
+    }
+
+    /**
+     * A file of the models folder still in use: a model of the catalog, the copy in
+     * progress of one that isn't there yet or, next to one that is, the XNNPack caches
+     * LiteRT-LM writes ("<model file>.xnnpack_cache_…": the weights already laid out
+     * for the CPU, which every launch would otherwise build again).
+     */
+    private fun isNeeded(name: String, known: List<String>): Boolean = known.any { model ->
+        val present = File(modelsDir(), model).exists()
+        when (name) {
+            model -> true
+            "$model.assembling", "$model.copying" -> !present
+            else -> present && name.startsWith("$model.")
         }
     }
 

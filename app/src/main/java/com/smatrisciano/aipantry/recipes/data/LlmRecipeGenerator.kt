@@ -1,184 +1,318 @@
 package com.smatrisciano.aipantry.recipes.data
 
+import android.os.SystemClock
 import android.util.Log
-import com.google.ai.edge.litertlm.Content
-import com.google.ai.edge.litertlm.Contents
+import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
+import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Measure
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
+import com.smatrisciano.aipantry.core.data.ai.LlmModel
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
-import com.smatrisciano.aipantry.core.data.ai.text
 import com.smatrisciano.aipantry.core.domain.AppLanguage
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
+import com.smatrisciano.aipantry.inventory.domain.models.IngredientSource
+import com.smatrisciano.aipantry.recipes.domain.DetailsPart
+import com.smatrisciano.aipantry.recipes.domain.DetailsUpdate
 import com.smatrisciano.aipantry.recipes.domain.GenerationProgress
+import com.smatrisciano.aipantry.recipes.domain.ListUpdate
+import com.smatrisciano.aipantry.recipes.domain.RECIPES_PER_LIST
 import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.ProducerScope
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.launch
+import kotlin.math.exp
+import kotlin.math.ln
 
 /**
  * On-device recipe generation with the active model (Gemma 4 E2B) via LiteRT-LM.
- * Two stages to minimise generated tokens: a light list right away,
- * instructions on demand when the user opens the recipe.
+ * Two stages to minimise generated tokens: a light list first, instructions only
+ * for the recipe the user opens. Both stream: every recipe of the list, and every
+ * part of the instructions, goes out as soon as the model has written it.
  */
 class LlmRecipeGenerator(
     private val modelRepository: ModelRepository,
-    private val engineHolder: LlmEngineHolder
+    private val engineHolder: LlmEngineHolder,
+    private val waitTimes: WaitTimeEstimator
 ) : RecipeGenerator {
 
     override val engineName: String
         get() = "${modelRepository.activeModel().displayName} · LiteRT"
 
-    override suspend fun generate(
+    override fun generate(
         ingredients: List<Ingredient>,
-        onProgress: (GenerationProgress) -> Unit
-    ): List<Recipe> = withContext(Dispatchers.Default) {
+        round: Int,
+        received: List<Recipe>,
+        firstAttempt: Int,
+        written: Int
+    ): Flow<ListUpdate> = channelFlow {
         val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
-        onProgress(GenerationProgress.LoadingModel(model.displayName))
+        send(ListUpdate.Step(GenerationProgress.LoadingModel(model.displayName)))
         engineHolder.acquire(model, modelRepository.modelFile(model))
 
-        onProgress(GenerationProgress.Generating(ingredients.size))
+        send(ListUpdate.Step(GenerationProgress.Generating(ingredients.size)))
         val language = AppLanguage.current()
-        val names = ingredients.map { it.name }
-        val round = nextRound(listKey(names, language))
-        val prompt = buildListPrompt(ingredientsFor(names, round), language)
-        val recipes = withRetry { attempt ->
-            if (attempt > 0) onProgress(GenerationProgress.Retrying)
-            val rawOutput = generateChecked(model, prompt, seedFor(round, attempt))
-            Log.d(TAG, "raw list output: $rawOutput")
-            val parsed = RecipeJsonParser.parse(rawOutput)
-            if (language == AppLanguage.IT) soundRecipes(parsed, lastAttempt = attempt == MAX_ATTEMPTS - 1) else parsed
-        }
-
-        // Missing ingredients aren't decided by the model (unreliable): anything a
-        // recipe uses that isn't in the inventory is, by definition, to buy
-        val available = ingredients.map { it.name.lowercase() }
-        val normalized = recipes.map { recipe ->
-            val (owned, toBuy) = recipe.usedIngredients.partition { used ->
-                val u = normalizeIngredientName(used.name)
-                isPantryStaple(u) || available.any { it in u || u in it }
-            }
-            val missing = (recipe.missingIngredients + toBuy)
-                .filterNot { m -> isPantryStaple(normalizeIngredientName(m.name)) }
-                .distinctBy { normalizeIngredientName(it.name) }
-            recipe.copy(usedIngredients = owned, missingIngredients = missing)
-        }
-
-        // Recipes that are missing something go last; with the same number of
-        // missing items, the model's relevance order stays
-        normalized.sortedBy { it.missingIngredients.size }
-    }
-
-    override suspend fun generateDetails(
-        recipe: Recipe,
-        ingredients: List<Ingredient>
-    ): Recipe = withContext(Dispatchers.Default) {
-        val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
-        val prompt = buildDetailsPrompt(recipe, AppLanguage.current())
-        val round = nextRound(prompt)
-        withRetry { attempt ->
-            val rawOutput = generateChecked(model, prompt, seedFor(round, attempt))
-            Log.d(TAG, "raw details output: $rawOutput")
-            RecipeJsonParser.parseDetails(recipe, rawOutput)
-        }
-    }
-
-    /**
-     * Inference with two safeguards:
-     *  - watchdog: on a degraded GPU driver `sendMessage` can block forever
-     *    (non-interruptible native call). It runs in a separate job with a timeout
-     *    on the await: when it expires the CPU is forced and the call retried,
-     *    instead of leaving the UI loading forever;
-     *  - anti-corruption: if the model emits garbage tokens (<pad>, <unused…>),
-     *    it is recreated on CPU and the call retried.
-     */
-    private suspend fun generateChecked(
-        model: com.smatrisciano.aipantry.core.data.ai.LlmModel,
-        prompt: String,
-        seed: Int
-    ): String {
-        val file = modelRepository.modelFile(model)
-
-        // The watchdog ONLY exists to expose a GPU hang: the CPU never hangs, it's
-        // just slow, so it must be allowed to finish with no limit (otherwise a long
-        // CPU generation would be killed and retried).
-        val rawOutput = if (engineHolder.currentBackendIsGpu()) {
-            // Detached job: if the GPU hangs, the native thread stays stuck (it can't be
-            // killed) but the calling coroutine moves on and recovers on CPU
-            val generation = watchdogScope.async {
-                engineHolder.createConversation(model, file, temperature = 0.5, topK = 25, topP = 0.9, seed = seed).use { conversation ->
-                    conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
-                }
-            }
-            // Besides hanging, the GPU can fail with an immediate exception (e.g.
-            // OpenCL missing on the emulator): same treatment as the timeout
-            val result = try {
-                withTimeoutOrNull(GENERATION_TIMEOUT_MS) { generation.await() }
+        val prompt = buildListPrompt(ingredientsFor(promptOrder(ingredients).map { it.name }, round), language)
+        // Titles sent so far, the received ones included: an attempt that is resumed or
+        // repeated writes some of them again, and they mustn't show twice
+        val titles = received.mapTo(mutableSetOf()) { it.title.lowercase() }
+        var lastError: Exception? = null
+        for (attempt in firstAttempt until MAX_ATTEMPTS) {
+            send(ListUpdate.Attempt(attempt))
+            if (attempt > 0) send(ListUpdate.Step(GenerationProgress.Retrying))
+            try {
+                val replay = if (attempt == firstAttempt) written else 0
+                writeList(model, prompt, seedFor(round, attempt), ingredients, language, titles, replay)
+                // Too few sound recipes (odd dishes dropped, or an answer that ignored the
+                // format): the next attempt adds to the ones already sent
+                if (titles.size >= MIN_SOUND_RECIPES) return@channelFlow
+                lastError = IllegalStateException("Only ${titles.size} sound recipes")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "GPU generation failed", e)
-                null
-            }
-            result ?: run {
-                generation.cancel()
-                Log.w(TAG, "GPU generation failed or timed out, switching to CPU")
-                engineHolder.reportGpuUnusable(model)
-                error("Generation failed on GPU, retrying")
-            }
-        } else {
-            engineHolder.createConversation(model, file, temperature = 0.5, topK = 40, topP = 0.9, seed = seed).use { conversation ->
-                conversation.sendMessage(Contents.of(Content.Text(prompt))).text()
-            }
-        }
-
-        if (garbageMarkers.any { it in rawOutput }) {
-            Log.w(TAG, "corrupted output detected: ${rawOutput.take(120)}")
-            check(engineHolder.reportGpuUnusable(model)) {
-                "The AI model is producing corrupted output on this device"
-            }
-            error("Corrupted LLM output, retrying")
-        }
-        return rawOutput
-    }
-
-    /**
-     * With a small (1-2B) model the output sometimes ignores the format:
-     * retry silently before the error reaches the UI.
-     */
-    private inline fun <T> withRetry(attempts: Int = MAX_ATTEMPTS, block: (attempt: Int) -> T): T {
-        var lastError: Throwable? = null
-        repeat(attempts) { attempt ->
-            try {
-                return block(attempt)
-            } catch (e: Exception) {
-                Log.w(TAG, "LLM attempt ${attempt + 1}/$attempts failed", e)
+                Log.w(TAG, "LLM attempt ${attempt + 1}/$MAX_ATTEMPTS failed", e)
+                onFailedAttempt(model, e)
                 lastError = e
             }
         }
-        throw requireNotNull(lastError)
+        // Out of attempts: whatever was written stays, however short the list
+        if (titles.isEmpty()) throw lastError ?: IllegalStateException("No recipes")
+    }.flowOn(Dispatchers.Default)
+
+    override fun generateDetails(recipe: Recipe, round: Int): Flow<DetailsUpdate> = channelFlow {
+        val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
+        engineHolder.acquire(model, modelRepository.modelFile(model))
+        val prompt = buildDetailsPrompt(recipe, AppLanguage.current())
+        var lastError: Exception? = null
+        for (attempt in 0 until MAX_ATTEMPTS) {
+            if (attempt > 0) send(DetailsUpdate.Retrying)
+            try {
+                val details = writeDetails(model, prompt, seedFor(round, attempt), recipe)
+                send(DetailsUpdate.Written(details, writing = null))
+                return@channelFlow
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "LLM attempt ${attempt + 1}/$MAX_ATTEMPTS failed", e)
+                onFailedAttempt(model, e)
+                lastError = e
+            }
+        }
+        throw lastError ?: IllegalStateException("No details")
+    }.flowOn(Dispatchers.Default)
+
+    /**
+     * One attempt at the list: every sound recipe goes out as soon as its object is
+     * complete. The first [replay] objects were written before an interruption: the
+     * same seed writes them again, and meanwhile there is no new recipe to follow.
+     */
+    private suspend fun ProducerScope<ListUpdate>.writeList(
+        model: LlmModel,
+        prompt: String,
+        seed: Int,
+        ingredients: List<Ingredient>,
+        language: AppLanguage,
+        titles: MutableSet<String>,
+        replay: Int
+    ) {
+        val objects = JsonObjectStream()
+        val output = StringBuilder()
+        val recipeChars = waitTimes.expected(Measure.LIST_RECIPE_CHARS)
+        // Objects completed in this answer, odd dishes included: they took as long to write
+        var written = 0
+        val progress = AnswerProgress(LIST_READING_SHARE, waitTimes.expected(Measure.PROMPT_READING_MILLIS))
+        // Only changes that show: a whole percent of the list or of the recipe being written
+        var lastSent: List<Int?>? = null
+        suspend fun report(fraction: Float, recipe: Float?) {
+            val shown = listOf((fraction * 100).toInt(), written, recipe?.let { (it * 100).toInt() })
+            if (shown == lastSent) return
+            lastSent = shown
+            send(ListUpdate.Progress(fraction, written, recipe))
+        }
+        coroutineScope {
+            val reading = launch {
+                while (true) {
+                    report(progress.reading(), recipe = null)
+                    delay(PROGRESS_TICK_MILLIS)
+                }
+            }
+            answer(model, prompt, seed)
+                // An attempt that only tops up the list is done as soon as the list is full
+                .takeWhile { titles.size < RECIPES_PER_LIST }
+                .collect { piece ->
+                    if (output.isEmpty()) {
+                        reading.cancel()
+                        waitTimes.record(Measure.PROMPT_READING_MILLIS, progress.elapsedMillis)
+                    }
+                    output.append(piece)
+                    checkNotCorrupted(output)
+                    for (json in objects.append(piece)) {
+                        written++
+                        waitTimes.record(Measure.LIST_RECIPE_CHARS, json.length.toLong())
+                        RecipeJsonParser.parseRecipe(json)?.let { offer(it, ingredients, language, titles) }
+                    }
+                    val current = (objects.pendingLength.toFloat() / recipeChars).coerceAtMost(UNFINISHED_RECIPE_CAP)
+                    report(
+                        fraction = progress.writing((written + current) / RECIPES_PER_LIST),
+                        recipe = current.takeIf { written >= replay }
+                    )
+                }
+            reading.cancel()
+        }
+        Log.d(TAG, "raw list output: $output")
+        // Not a sequence of plain objects (escaped JSON, say): parsed as a whole at the end
+        if (written == 0) RecipeJsonParser.parse(output.toString()).forEach { offer(it, ingredients, language, titles) }
+    }
+
+    /** One attempt at the details: every complete part goes out as soon as it is written. */
+    private suspend fun ProducerScope<DetailsUpdate>.writeDetails(
+        model: LlmModel,
+        prompt: String,
+        seed: Int,
+        recipe: Recipe
+    ): Recipe {
+        val output = StringBuilder()
+        val expectedChars = waitTimes.expected(Measure.DETAILS_CHARS)
+        var parsedUpTo = -1
+        var writing = DetailsPart.INTRO
+        val progress = AnswerProgress(DETAILS_READING_SHARE, waitTimes.expected(Measure.PROMPT_READING_MILLIS))
+        // Only changes that show: a whole percent
+        var lastPercent = -1
+        suspend fun report(fraction: Float) {
+            val percent = (fraction * 100).toInt()
+            if (percent == lastPercent) return
+            lastPercent = percent
+            send(DetailsUpdate.Progress(fraction))
+        }
+        coroutineScope {
+            val reading = launch {
+                while (true) {
+                    report(progress.reading())
+                    delay(PROGRESS_TICK_MILLIS)
+                }
+            }
+            answer(model, prompt, seed).collect { piece ->
+                if (output.isEmpty()) {
+                    reading.cancel()
+                    waitTimes.record(Measure.PROMPT_READING_MILLIS, progress.elapsedMillis)
+                }
+                output.append(piece)
+                checkNotCorrupted(output)
+                RecipeJsonParser.parsePartialDetails(recipe, output, after = parsedUpTo)?.let { partial ->
+                    parsedUpTo = partial.end
+                    partial.writing?.let { writing = it }
+                    send(DetailsUpdate.Written(partial.recipe, writing))
+                }
+                report(progress.writing(output.length.toFloat() / expectedChars))
+            }
+            reading.cancel()
+        }
+        Log.d(TAG, "raw details output: $output")
+        val details = RecipeJsonParser.parseDetails(recipe, output.toString())
+        waitTimes.record(Measure.DETAILS_CHARS, output.length.toLong())
+        return details
     }
 
     /**
-     * With a fixed seed the output is deterministic (bit-identical on CPU):
-     * "Regenerate" and the retries would always give the same answer. So every new
-     * request with the same key (a recipe's details prompt, or an ingredient set
-     * for the lists) moves on to seeds not used yet, starting from 1.
+     * Sends [recipe] unless it was sent already or (in Italian) it doesn't hold
+     * together, with its title tidied (see [RecipeTitleRules]) and what's missing
+     * worked out.
      */
-    private val rounds = mutableMapOf<String, Int>()
-
-    private fun nextRound(key: String): Int = synchronized(rounds) {
-        val round = rounds.getOrDefault(key, 0)
-        rounds[key] = round + 1
-        round
+    private suspend fun ProducerScope<ListUpdate>.offer(
+        recipe: Recipe,
+        ingredients: List<Ingredient>,
+        language: AppLanguage,
+        titles: MutableSet<String>
+    ) {
+        val tidy = if (language == AppLanguage.IT) recipe.copy(title = RecipeTitleRules.tidy(recipe.title)) else recipe
+        if (language == AppLanguage.IT && RecipeTitleRules.isOddCombination(tidy.title)) {
+            Log.d(TAG, "dropped odd recipe: ${tidy.title}")
+            return
+        }
+        if (titles.size >= RECIPES_PER_LIST || !titles.add(tidy.title.lowercase())) return
+        send(ListUpdate.Written(withMissingIngredients(tidy, ingredients)))
     }
 
-    /** Same ingredients in any order, same language: the same sequence of lists. */
-    private fun listKey(names: List<String>, language: AppLanguage): String =
-        "$language|" + names.map { it.lowercase() }.sorted().joinToString("|")
+    /**
+     * Missing ingredients aren't decided by the model (unreliable): anything a recipe
+     * uses that isn't in the inventory is, by definition, to buy.
+     */
+    private fun withMissingIngredients(recipe: Recipe, ingredients: List<Ingredient>): Recipe {
+        val available = ingredients.map { it.name.lowercase() }
+        val (owned, toBuy) = recipe.usedIngredients.partition { used ->
+            val u = normalizeIngredientName(used.name)
+            isPantryStaple(u) || available.any { it in u || u in it }
+        }
+        val missing = (recipe.missingIngredients + toBuy)
+            .filterNot { m -> isPantryStaple(normalizeIngredientName(m.name)) }
+            .distinctBy { normalizeIngredientName(it.name) }
+        return recipe.copy(usedIngredients = owned, missingIngredients = missing)
+    }
+
+    /**
+     * The model's answer, a piece at a time. On GPU a watchdog catches a hung driver
+     * (no new text for [GPU_STALL_TIMEOUT_MS]) and any failure of the engine is the
+     * GPU's: see [onFailedAttempt]. The CPU never hangs, it's just slow, so there an
+     * answer takes as long as it needs.
+     */
+    private fun answer(model: LlmModel, prompt: String, seed: Int): Flow<String> {
+        val gpu = engineHolder.currentBackendIsGpu()
+        return engineHolder.streamAnswer(
+            model = model,
+            file = modelRepository.modelFile(model),
+            prompt = prompt,
+            temperature = 0.5,
+            topK = if (gpu) 25 else 40,
+            topP = 0.9,
+            seed = seed,
+            stallTimeoutMillis = if (gpu) GPU_STALL_TIMEOUT_MS else null
+        ).catch { error ->
+            // Besides hanging, the GPU can fail with an immediate exception (e.g. OpenCL
+            // missing on the emulator): same treatment
+            throw if (gpu && error !is CancellationException) GpuFailureException(error) else error
+        }
+    }
+
+    /** Garbage tokens (<pad>, <unused…>) in the answer: see [onFailedAttempt]. */
+    private fun checkNotCorrupted(output: CharSequence) {
+        if (garbageMarkers.any { output.contains(it) }) throw CorruptedOutputException(output.take(120).toString())
+    }
+
+    /**
+     * A failing or hung GPU, or garbage tokens in the answer, mean the GPU backend is
+     * broken on this device: it is marked unusable and the next attempt runs on CPU.
+     */
+    private fun onFailedAttempt(model: LlmModel, error: Exception) {
+        if (error is GpuFailureException || error is CorruptedOutputException) {
+            engineHolder.reportGpuUnusable(model)
+        }
+    }
+
+    private class GpuFailureException(cause: Throwable) : Exception("Generation failed on GPU", cause)
+
+    private class CorruptedOutputException(sample: String) : Exception("Corrupted LLM output: $sample")
+
+    /**
+     * The pantry first, then the fridge, each in the inventory's own order (latest scan
+     * first, then as detected). The order steers a 2B model's dishes: a fixed one keeps
+     * the first list the same however the fridge and the pantry were scanned and saved,
+     * one after the other or both at once.
+     */
+    private fun promptOrder(ingredients: List<Ingredient>): List<Ingredient> =
+        ingredients.sortedBy { ingredient ->
+            when (ingredient.source) {
+                IngredientSource.PANTRY -> 0
+                IngredientSource.FRIDGE -> 1
+                IngredientSource.MANUAL -> 2
+            }
+        }
 
     /**
      * A new seed alone isn't enough: at this temperature a 2B model keeps going back
@@ -202,22 +336,6 @@ class LlmRecipeGenerator(
         h = h xor (h ushr 13)
         h *= 0xC2B2AE35.toInt()
         return h xor (h ushr 16)
-    }
-
-    /**
-     * Tidies the titles and drops the dishes that don't hold together (see
-     * [RecipeTitleRules]). With fewer than [MIN_SOUND_RECIPES] left the attempt
-     * fails and the next seed is tried, except on the last attempt.
-     */
-    private fun soundRecipes(recipes: List<Recipe>, lastAttempt: Boolean): List<Recipe> {
-        val (odd, sound) = recipes
-            .map { it.copy(title = RecipeTitleRules.tidy(it.title)) }
-            .partition { RecipeTitleRules.isOddCombination(it.title) }
-        if (odd.isNotEmpty()) Log.d(TAG, "dropped odd recipes: ${odd.map { it.title }}")
-        check(sound.size >= MIN_SOUND_RECIPES || (lastAttempt && sound.isNotEmpty())) {
-            "Only ${sound.size} sound recipes"
-        }
-        return sound
     }
 
     // Starts at 1: for the runtime, seed 0 and seed 1 give the same output
@@ -298,15 +416,12 @@ class LlmRecipeGenerator(
             )
             .trim()
 
-    // Detached scope for the watchdog: its jobs can stay stuck on a native GPU
-    // call without dragging the calling coroutine along
-    private val watchdogScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private companion object {
         const val TAG = "LlmRecipeGenerator"
         const val MAX_ATTEMPTS = 4
 
-        // A list with fewer dishes than this after dropping the odd ones is regenerated
+        // A list with fewer dishes than this after dropping the odd ones gets another
+        // attempt, which adds to it
         const val MIN_SOUND_RECIPES = 3
         const val GOLDEN_RATIO_32 = -0x61C88647 // 0x9E3779B9, spreads consecutive rounds apart
 
@@ -315,9 +430,20 @@ class LlmRecipeGenerator(
         const val LIST_SHARE_PERCENT = 65
         const val MIN_LIST_INGREDIENTS = 8
 
-        // Beyond this time the generation is considered stuck (degraded GPU):
-        // the CPU is forced and the call retried
-        const val GENERATION_TIMEOUT_MS = 75_000L
+        // Share of the wait spent reading the prompt, before anything is written (Pixel 7
+        // CPU: ~10 s of ~36 for a list, of ~70-90 for the longer details)
+        const val LIST_READING_SHARE = 0.3f
+        const val DETAILS_READING_SHARE = 0.15f
+
+        // A recipe still being written never counts as finished, however long it gets
+        const val UNFINISHED_RECIPE_CAP = 0.95f
+
+        // While the model reads the prompt, the progress is a matter of time: updated this often
+        const val PROGRESS_TICK_MILLIS = 100L
+
+        // On GPU, this long without any new text means the generation is stuck
+        // (degraded driver): the CPU is forced and the attempt repeated
+        const val GPU_STALL_TIMEOUT_MS = 60_000L
 
         val garbageMarkers = listOf("<unused", "<pad>", "<unk>")
 
@@ -330,5 +456,33 @@ class LlmRecipeGenerator(
             "acqua", "sale", "pepe", "olio d'oliva", "olio",
             "zucchero", "farina", "pane", "burro", "aceto"
         )
+    }
+}
+
+/**
+ * Progress of one answer (0..1), from what the model actually does: while it reads
+ * the prompt it creeps towards [readingShare] at the pace reading usually takes on
+ * this device; once it writes, the share written so far fills the rest.
+ */
+private class AnswerProgress(
+    private val readingShare: Float,
+    expectedReadingMillis: Long
+) {
+    private val startedAt = SystemClock.elapsedRealtime()
+
+    // 90% of the reading share at the usual reading time, then ever slower
+    private val k = ln(10.0) / expectedReadingMillis.coerceAtLeast(1)
+
+    val elapsedMillis: Long get() = SystemClock.elapsedRealtime() - startedAt
+
+    /** While the model reads the prompt. */
+    fun reading(): Float = readingShare * (1 - exp(-k * elapsedMillis)).toFloat()
+
+    /** Once it writes: [written] is the share of the answer written so far (0..1). */
+    fun writing(written: Float): Float = readingShare + (1 - readingShare) * written.coerceIn(0f, MAX_WRITTEN)
+
+    private companion object {
+        // An answer longer than usual mustn't reach 100% before it ends
+        const val MAX_WRITTEN = 0.98f
     }
 }

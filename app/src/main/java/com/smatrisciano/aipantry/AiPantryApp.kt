@@ -2,9 +2,11 @@ package com.smatrisciano.aipantry
 
 import android.app.Application
 import com.smatrisciano.aipantry.capture.data.di.captureModule
+import com.smatrisciano.aipantry.core.data.ai.BackgroundAiWork
 import com.smatrisciano.aipantry.core.di.coreModule
 import com.smatrisciano.aipantry.inventory.data.di.inventoryModule
 import com.smatrisciano.aipantry.recipes.data.di.recipesModule
+import org.koin.android.ext.android.get
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
@@ -23,5 +25,6 @@ class AiPantryApp : Application() {
                 recipesModule
             )
         }
+        get<BackgroundAiWork>().watchVisibility(this)
     }
 }

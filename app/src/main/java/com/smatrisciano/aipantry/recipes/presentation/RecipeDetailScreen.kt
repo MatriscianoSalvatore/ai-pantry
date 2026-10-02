@@ -1,9 +1,12 @@
 package com.smatrisciano.aipantry.recipes.presentation
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -11,7 +14,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,9 +64,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -68,6 +77,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
@@ -91,6 +101,9 @@ import com.smatrisciano.aipantry.core.presentation.composables.emojiTone
 import com.smatrisciano.aipantry.core.presentation.theme.Tone
 import com.smatrisciano.aipantry.core.presentation.theme.extendedColors
 import com.smatrisciano.aipantry.inventory.presentation.composables.ingredientEmoji
+import com.smatrisciano.aipantry.recipes.domain.DetailsPart
+import com.smatrisciano.aipantry.recipes.domain.DetailsStatus
+import com.smatrisciano.aipantry.recipes.domain.RecipeDetails
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 import com.smatrisciano.aipantry.recipes.domain.models.RecipeIngredient
 import com.smatrisciano.aipantry.recipes.presentation.composables.CookingWaitPhrases
@@ -101,29 +114,28 @@ import com.smatrisciano.aipantry.recipes.presentation.composables.dishEmoji
 @Composable
 fun RecipeDetailScreenRoot(
     viewModel: RecipesViewModel,
-    recipeIndex: Int,
+    recipeId: Int,
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val recipe = state.recipes.getOrNull(recipeIndex)
+    val item = state.recipes.firstOrNull { it.id == recipeId }
 
-    // The instructions are generated on demand the first time the recipe is opened
-    LaunchedEffect(recipeIndex) {
-        viewModel.onAction(RecipesActions.Interaction.OnRecipeOpened(recipeIndex))
+    // The instructions are written for the recipe on screen first, unless they are
+    // ready already (written ahead of time, or on an earlier visit)
+    DisposableEffect(recipeId) {
+        viewModel.onAction(RecipesActions.Interaction.OnRecipeOpened(recipeId))
+        onDispose { viewModel.onAction(RecipesActions.Interaction.OnRecipeClosed(recipeId)) }
     }
 
-    if (recipe == null) {
+    if (item == null) {
         onBack()
         return
     }
     RecipeDetailScreen(
-        recipe = recipe,
-        isDetailLoading = state.isDetailLoading,
-        detailFailed = state.detailFailed,
-        detailExpectedMillis = state.detailExpectedMillis,
-        detailCompleted = state.detailCompleted,
+        recipe = item.recipe,
+        details = item.details,
         onRetryDetails = {
-            viewModel.onAction(RecipesActions.Interaction.OnRecipeOpened(recipeIndex))
+            viewModel.onAction(RecipesActions.Interaction.OnRetryDetailsClick(recipeId))
         },
         onBack = onBack
     )
@@ -132,13 +144,11 @@ fun RecipeDetailScreenRoot(
 @Composable
 private fun RecipeDetailScreen(
     recipe: Recipe,
-    isDetailLoading: Boolean,
-    detailFailed: Boolean,
-    detailExpectedMillis: Long,
-    detailCompleted: Boolean,
+    details: RecipeDetails,
     onRetryDetails: () -> Unit,
     onBack: () -> Unit
 ) {
+    val isWriting = details.status == DetailsStatus.PENDING
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -216,23 +226,35 @@ private fun RecipeDetailScreen(
                 SectionTitle(stringResource(R.string.instructions))
                 Instructions(
                     steps = recipe.steps,
-                    isDetailLoading = isDetailLoading,
-                    detailFailed = detailFailed,
-                    detailExpectedMillis = detailExpectedMillis,
-                    detailCompleted = detailCompleted,
+                    details = details,
                     onRetryDetails = onRetryDetails
                 )
 
-                if (recipe.variants.isNotEmpty()) {
+                val writingVariants = isWriting && details.writing == DetailsPart.VARIANTS
+                if (recipe.variants.isNotEmpty() || writingVariants) {
                     SectionTitle(stringResource(R.string.variants))
-                    Variants(recipe.variants)
+                    Variants(recipe.variants, writingMore = writingVariants)
                 }
 
+                // While the panel below is up, the page scrolls far enough to show it all above it
+                val panelRoom by animateDpAsState(
+                    targetValue = if (isWriting) WritingPanelRoom else 0.dp,
+                    label = "writingPanelRoom"
+                )
                 Spacer(
                     modifier = Modifier
                         .navigationBarsPadding()
-                        .height(32.dp)
+                        .height(32.dp + panelRoom)
                 )
+            }
+
+            AnimatedVisibility(
+                visible = isWriting,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                WritingPanel(progress = details.progress)
             }
 
             DetailTopBar(
@@ -549,30 +571,28 @@ private enum class InstructionsContent { NONE, LOADING, FAILED, STEPS }
 @Composable
 private fun Instructions(
     steps: List<String>,
-    isDetailLoading: Boolean,
-    detailFailed: Boolean,
-    detailExpectedMillis: Long,
-    detailCompleted: Boolean,
+    details: RecipeDetails,
     onRetryDetails: () -> Unit
 ) {
+    val isWriting = details.status == DetailsStatus.PENDING
     val content = when {
         steps.isNotEmpty() -> InstructionsContent.STEPS
-        isDetailLoading -> InstructionsContent.LOADING
-        detailFailed -> InstructionsContent.FAILED
+        isWriting -> InstructionsContent.LOADING
+        details.status == DetailsStatus.FAILED -> InstructionsContent.FAILED
         else -> InstructionsContent.NONE
     }
-    // Crossfade, so the steps replace the wait card instead of popping in
+    // Crossfade, so the first step replaces the wait card instead of popping in
     AnimatedContent(
         targetState = content,
         transitionSpec = { fadeIn(tween(220, delayMillis = 90)) togetherWith fadeOut(tween(90)) },
         label = "instructions"
     ) { target ->
         when (target) {
-            InstructionsContent.STEPS -> StepsTimeline(steps)
-            InstructionsContent.LOADING -> InstructionsLoadingCard(
-                expectedMillis = detailExpectedMillis,
-                completed = detailCompleted
+            InstructionsContent.STEPS -> StepsTimeline(
+                steps = steps,
+                writingMore = isWriting && details.writing == DetailsPart.STEPS
             )
+            InstructionsContent.LOADING -> StepsSkeleton(modifier = Modifier.padding(horizontal = ScreenPadding))
             InstructionsContent.FAILED -> InstructionsFailedCard(onRetry = onRetryDetails)
             InstructionsContent.NONE -> Spacer(modifier = Modifier.fillMaxWidth())
         }
@@ -580,63 +600,60 @@ private fun Instructions(
 }
 
 /**
- * Gemma writing the steps: the orb, the simulated progress, the rotating
- * kitchen phrases and a pulsing preview of the steps to come.
+ * While Gemma writes the recipe: the orb, the kitchen phrases and the progress,
+ * floating at the bottom so they stay in sight wherever the page is scrolled, as
+ * the reason it fits, the amounts and the steps fill in.
  */
 @Composable
-private fun InstructionsLoadingCard(expectedMillis: Long, completed: Boolean) {
-    Column(
+private fun WritingPanel(progress: Float) {
+    Surface(
         modifier = Modifier
-            .padding(horizontal = ScreenPadding)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.extendedColors.card)
-            .padding(20.dp)
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.extendedColors.card,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 6.dp
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            AiOrb(size = 44.dp)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = stringResource(R.string.writing_instructions),
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f)
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AiOrb(size = 44.dp)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.writing_instructions),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    CookingWaitPhrases(
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Start,
+                        // Full width and a minimum height, so the panel doesn't jump as phrases change
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 20.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            WaitProgressBar(
+                progress = progress,
+                // Neutral track: the default secondary container is tangerine
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
             )
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        WaitProgressBar(
-            expectedMillis = expectedMillis,
-            completed = completed,
-            // Neutral track: the default secondary container is tangerine
-            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        CookingWaitPhrases(
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Start,
-            // Full width and a minimum height, so the card doesn't jump as phrases change
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 20.dp)
-        )
-        Spacer(modifier = Modifier.height(20.dp))
-        StepsSkeleton()
     }
 }
 
+/** Pulsing placeholders for the steps, until the model writes the first one. */
 @Composable
-private fun StepsSkeleton() {
-    val pulse by rememberInfiniteTransition(label = "skeleton").animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "skeletonPulse"
-    )
-    val color = MaterialTheme.colorScheme.surfaceContainerHigh
-    val lineShape = RoundedCornerShape(5.dp)
+private fun StepsSkeleton(modifier: Modifier = Modifier) {
+    val pulse by rememberPulse()
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .graphicsLayer { alpha = pulse },
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -646,32 +663,51 @@ private fun StepsSkeleton() {
                 Box(
                     modifier = Modifier
                         .size(28.dp)
-                        .background(color, CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
                 )
                 Spacer(modifier = Modifier.width(14.dp))
-                Column(
+                SkeletonLines(
                     modifier = Modifier
                         .weight(1f)
                         .padding(top = 4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(10.dp)
-                            .background(color, lineShape)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.7f)
-                            .height(10.dp)
-                            .background(color, lineShape)
-                    )
-                }
+                )
             }
         }
     }
 }
+
+/** Two bars standing in for a line and a half of text still being written. */
+@Composable
+private fun SkeletonLines(
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.surfaceContainerHigh
+) {
+    val lineShape = RoundedCornerShape(5.dp)
+    Column(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .background(color, lineShape)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.7f)
+                .height(10.dp)
+                .background(color, lineShape)
+        )
+    }
+}
+
+/** The slow breathing of the placeholders while the model writes. */
+@Composable
+private fun rememberPulse(): State<Float> = rememberInfiniteTransition(label = "skeleton").animateFloat(
+    initialValue = 0.45f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+    label = "skeletonPulse"
+)
 
 @Composable
 private fun InstructionsFailedCard(onRetry: () -> Unit) {
@@ -710,54 +746,124 @@ private fun InstructionsFailedCard(onRetry: () -> Unit) {
     }
 }
 
-/** Numbered steps joined by a rail, so the method reads as one sequence. */
+/**
+ * Numbered steps joined by a rail, so the method reads as one sequence. While
+ * [writingMore], a pulsing placeholder after the last one stands for the step the
+ * model is writing, and each new step fades in as it arrives.
+ */
 @Composable
-private fun StepsTimeline(steps: List<String>) {
+private fun StepsTimeline(steps: List<String>, writingMore: Boolean) {
+    // The steps already written when the section appears just show
+    val shownAtStart = remember { steps.size }
     Column(modifier = Modifier.padding(horizontal = ScreenPadding)) {
         steps.forEachIndexed { index, step ->
-            val isLast = index == steps.lastIndex
-            // Intrinsic height: the rail stretches exactly as tall as the step text
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .width(32.dp)
-                        .fillMaxHeight(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            key(index) {
+                val appear = remember { Animatable(if (index < shownAtStart) 1f else 0f) }
+                LaunchedEffect(Unit) { appear.animateTo(1f, tween(STEP_FADE_MILLIS)) }
+                TimelineRow(
+                    number = index + 1,
+                    joinsNext = index < steps.lastIndex || writingMore,
+                    modifier = Modifier.graphicsLayer { alpha = appear.value }
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "${index + 1}",
-                            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
-                    if (!isLast) {
-                        Box(
-                            modifier = Modifier
-                                .padding(vertical = 4.dp)
-                                .width(2.dp)
-                                .weight(1f)
-                                .background(MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                        )
-                    }
+                    Text(text = step, style = MaterialTheme.typography.bodyLarge)
                 }
-                Spacer(modifier = Modifier.width(14.dp))
+            }
+        }
+        if (writingMore) {
+            val pulse by rememberPulse()
+            TimelineRow(
+                number = steps.size + 1,
+                joinsNext = false,
+                pending = true,
+                modifier = Modifier.graphicsLayer { alpha = pulse }
+            ) {
+                SkeletonLines(modifier = Modifier.padding(top = 3.dp))
+            }
+        }
+    }
+}
+
+/**
+ * One step of the timeline: its number on the rail, then [content]. Intrinsic
+ * height: the rail stretches exactly as tall as the step. A [pending] step, still
+ * being written, has a muted number.
+ */
+@Composable
+private fun TimelineRow(
+    number: Int,
+    joinsNext: Boolean,
+    modifier: Modifier = Modifier,
+    pending: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+    ) {
+        Column(
+            modifier = Modifier
+                .width(32.dp)
+                .fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(if (pending) scheme.surfaceContainerHigh else scheme.primary, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
-                    text = step,
-                    style = MaterialTheme.typography.bodyLarge,
-                    // 4dp on top centres the first line on the number
+                    text = "$number",
+                    style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                    color = if (pending) scheme.onSurfaceVariant else scheme.onPrimary
+                )
+            }
+            if (joinsNext) {
+                Box(
                     modifier = Modifier
+                        .padding(vertical = 4.dp)
+                        .width(2.dp)
                         .weight(1f)
-                        .padding(top = 4.dp, bottom = if (isLast) 0.dp else 20.dp)
+                        .background(scheme.outlineVariant, CircleShape)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        // 4dp on top centres the first line on the number
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(top = 4.dp, bottom = if (joinsNext) 20.dp else 0.dp)
+        ) {
+            content()
+        }
+    }
+}
+
+/** Variations as tinted notes; while [writingMore], a pulsing one stands for the next. */
+@Composable
+private fun Variants(variants: List<String>, writingMore: Boolean) {
+    Column(
+        modifier = Modifier.padding(horizontal = ScreenPadding),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        variants.forEach { variant ->
+            VariantNote {
+                Text(
+                    text = variant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+        if (writingMore) {
+            val pulse by rememberPulse()
+            VariantNote(modifier = Modifier.graphicsLayer { alpha = pulse }) {
+                SkeletonLines(
+                    modifier = Modifier.padding(top = 3.dp),
+                    color = MaterialTheme.extendedColors.warning.copy(alpha = 0.22f)
                 )
             }
         }
@@ -765,35 +871,29 @@ private fun StepsTimeline(steps: List<String>) {
 }
 
 @Composable
-private fun Variants(variants: List<String>) {
-    Column(
-        modifier = Modifier.padding(horizontal = ScreenPadding),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+private fun VariantNote(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.extendedColors.tint(Tone.YELLOW))
+            .padding(14.dp)
     ) {
-        variants.forEach { variant ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.extendedColors.tint(Tone.YELLOW))
-                    .padding(14.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Lightbulb,
-                    contentDescription = null,
-                    tint = MaterialTheme.extendedColors.warning,
-                    // 1dp down aligns the bulb with the first line of text
-                    modifier = Modifier
-                        .padding(top = 1.dp)
-                        .size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = variant,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
+        Icon(
+            imageVector = Icons.Rounded.Lightbulb,
+            contentDescription = null,
+            tint = MaterialTheme.extendedColors.warning,
+            // 1dp down aligns the bulb with the first line of text
+            modifier = Modifier
+                .padding(top = 1.dp)
+                .size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Box(modifier = Modifier.weight(1f)) {
+            content()
         }
     }
 }
@@ -806,3 +906,7 @@ private val RowPadding = 16.dp
 private val LeadingSize = 36.dp
 private val LeadingGap = 14.dp
 private const val BAR_ANIMATION_MILLIS = 180
+private const val STEP_FADE_MILLIS = 300
+
+// Height of the writing panel with its margins, kept free at the end of the page
+private val WritingPanelRoom = 136.dp

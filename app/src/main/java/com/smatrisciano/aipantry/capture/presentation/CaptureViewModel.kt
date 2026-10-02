@@ -1,7 +1,6 @@
 package com.smatrisciano.aipantry.capture.presentation
 
 import android.graphics.Bitmap
-import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,8 +8,7 @@ import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Interaction
-import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
-import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Wait
+import com.smatrisciano.aipantry.core.data.ai.BackgroundAiWork
 import com.smatrisciano.aipantry.core.presentation.composables.WAIT_COMPLETION_MILLIS
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.inventory.domain.models.IngredientSource
@@ -31,7 +29,7 @@ sealed interface CaptureEvent {
 class CaptureViewModel(
     private val detector: IngredientDetector,
     private val inventoryRepository: InventoryRepository,
-    private val waitTimes: WaitTimeEstimator
+    backgroundAiWork: BackgroundAiWork
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CaptureState(engineName = detector.engineName))
@@ -42,6 +40,26 @@ class CaptureViewModel(
 
     /** Which scan (fridge/pantry) each detected ingredient comes from. */
     private val sourceByName = mutableMapOf<String, ScanTarget>()
+
+    // The camera is open: recognition gets the CPU to itself (recipes written ahead of
+    // time wait), and its model gets ready while the user frames the shot
+    private val resumeBackgroundWork = backgroundAiWork.pause()
+
+    init {
+        viewModelScope.launch {
+            try {
+                detector.warmUp()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Detector warm-up failed", e)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        resumeBackgroundWork()
+    }
 
     fun onAction(action: Interaction) {
         when (action) {
@@ -66,16 +84,15 @@ class CaptureViewModel(
                 isAnalyzing = true,
                 capturedPhoto = bitmap,
                 error = null,
-                analysisExpectedMillis = waitTimes.expectedMillis(Wait.DETECTION),
-                analysisCompleted = false
+                scan = null
             )
         }
         viewModelScope.launch {
-            val start = SystemClock.elapsedRealtime()
-            runCatching { detector.detect(bitmap, target) }
+            runCatching {
+                detector.detect(bitmap, target) { progress -> _uiState.update { it.copy(scan = progress) } }
+            }
                 .onSuccess { detections ->
-                    waitTimes.record(Wait.DETECTION, SystemClock.elapsedRealtime() - start)
-                    _uiState.update { it.copy(analysisCompleted = true) }
+                    // The bar has just reached 100%: a moment to see it before the results
                     delay(WAIT_COMPLETION_MILLIS)
                     if (detections.isEmpty()) {
                         _uiState.update {

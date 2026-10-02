@@ -2,14 +2,20 @@ package com.smatrisciano.aipantry.capture.data
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.SystemClock
 import android.util.Log
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
+import com.smatrisciano.aipantry.capture.domain.PhotoRegion
+import com.smatrisciano.aipantry.capture.domain.ScanProgress
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.core.domain.AppLanguage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -18,6 +24,7 @@ import org.tensorflow.lite.Interpreter
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.exp
 import kotlin.math.sqrt
 
@@ -77,81 +84,158 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
 
     // An Interpreter isn't thread-safe: a pool of instances (weights shared via
     // mmap) embeds the crops in parallel instead of one after another
-    private val interpreterPool: List<Interpreter> by lazy {
-        List(POOL_SIZE) {
-            Interpreter(modelBuffer, Interpreter.Options().apply { numThreads = THREADS_PER_INTERPRETER })
-        }
-    }
+    private var pool: List<Interpreter>? = null
+    private val poolLock = Mutex()
 
     // The input can be NHWC (1,256,256,3) or NCHW (1,3,256,256) depending on
     // the export: detected once from the tensor shape
-    private val inputIsNchw: Boolean by lazy {
-        interpreterPool.first().getInputTensor(0).shape()[1] == 3
+    @Volatile
+    private var inputIsNchw = false
+
+    /** A square crop of the photo: where it is in pixels, and in fractions for the UI. */
+    private class Crop(val x: Int, val y: Int, val side: Int, val region: PhotoRegion)
+
+    /**
+     * Labels and interpreters, ready before the shot (the camera has just opened):
+     * otherwise the first photo would pay for them.
+     */
+    override suspend fun warmUp() {
+        withContext(Dispatchers.Default) {
+            val start = SystemClock.elapsedRealtime()
+            val labels = labelMatrix.size
+            pool()
+            Log.i(TAG, "$labels labels and $POOL_SIZE interpreters ready in ${SystemClock.elapsedRealtime() - start}ms")
+        }
     }
 
-    override suspend fun detect(bitmap: Bitmap, target: ScanTarget): List<DetectedIngredient> =
-        withContext(Dispatchers.Default) {
-            val start = System.currentTimeMillis()
-            val bestScore = FloatArray(labelSpace.labels.size)
-            val crops = generateCrops(bitmap)
-            // Round-robin of the crops over the pool's interpreters, one worker per
-            // interpreter: real parallelism without contending for the same instance
-            val perCropTops = interpreterPool.mapIndexed { worker, interpreter ->
-                async {
-                    crops.filterIndexed { i, _ -> i % interpreterPool.size == worker }
-                        .map { crop -> softmaxOverLabels(embed(interpreter, crop)) }
-                }
-            }.awaitAll().flatten()
-            for (probs in perCropTops) {
-                // Only the crop's best matches: in a crowded crop the softmax spreads
-                // the probability and absolute scores drop, but the top 3 stay a
-                // reliable signal
-                val top = probs.indices.sortedByDescending { probs[it] }.take(TOP_PER_CROP)
-                if (Log.isLoggable(TAG, Log.DEBUG)) {
-                    Log.d(TAG, "crop top: " + top.joinToString {
-                        "${labelSpace.labels[it]}=${"%.2f".format(probs[it])}"
-                    })
-                }
-                for (i in top) {
-                    if (probs[i] > bestScore[i]) bestScore[i] = probs[i]
+    override suspend fun detect(
+        bitmap: Bitmap,
+        target: ScanTarget,
+        onProgress: (ScanProgress) -> Unit
+    ): List<DetectedIngredient> = withContext(Dispatchers.Default) {
+        val start = SystemClock.elapsedRealtime()
+        val interpreters = pool()
+        val crops = cropsOf(bitmap)
+        val language = AppLanguage.current()
+        val bestScore = FloatArray(labelSpace.labels.size)
+        // Guards the scores and the progress: every worker reports as it goes
+        val lock = Any()
+        val active = linkedSetOf<Int>()
+        var done = 0
+        fun report() = onProgress(
+            ScanProgress(crops.size, done, active.map { crops[it].region }, results(bestScore, language))
+        )
+
+        synchronized(lock) { report() }
+        val next = AtomicInteger()
+        // The interpreters take the crops in order, each the next one as soon as it is
+        // free: the coarse crops, which cover the whole photo, are all done first
+        interpreters.map { interpreter ->
+            async {
+                while (true) {
+                    val index = next.getAndIncrement()
+                    if (index >= crops.size) break
+                    synchronized(lock) {
+                        active += index
+                        report()
+                    }
+                    val crop = crops[index]
+                    val pixels = Bitmap.createBitmap(bitmap, crop.x, crop.y, crop.side, crop.side)
+                    val probs = softmaxOverLabels(embed(interpreter, pixels))
+                    synchronized(lock) {
+                        keepBestMatches(probs, bestScore)
+                        active -= index
+                        done++
+                        report()
+                    }
                 }
             }
-            Log.i(TAG, "${crops.size} crops in ${System.currentTimeMillis() - start}ms")
-            val distractors = labelSpace.distractors
-            val language = AppLanguage.current()
-            bestScore.indices
-                .filter { distractors.getOrElse(it) { false }.not() && bestScore[it] >= MIN_PROB }
-                // Different labels with the same display name (e.g. the milk variants)
-                // collapse into a single result, with the best score
-                .groupBy { labelSpace.displayName(it, language) }
-                .map { (name, indices) -> name to indices.maxOf { bestScore[it] } }
-                .sortedByDescending { (_, score) -> score }
-                .take(MAX_RESULTS)
-                .map { (name, score) ->
-                    DetectedIngredient(
-                        name = name.replaceFirstChar(Char::uppercase),
-                        // CLIP classifies, it doesn't count: placeholder quantity
-                        quantity = "1 pc",
-                        confidence = score
-                    )
-                }
+        }.awaitAll()
+        Log.i(TAG, "${crops.size} crops in ${SystemClock.elapsedRealtime() - start}ms")
+        results(bestScore, language)
+    }
+
+    /**
+     * The interpreters, created on first use. Each embeds a blank image straight
+     * away: the first inference pays one-off costs that would otherwise land on
+     * the first photo.
+     */
+    private suspend fun pool(): List<Interpreter> = poolLock.withLock {
+        pool ?: coroutineScope {
+            val interpreters = List(POOL_SIZE) {
+                async { Interpreter(modelBuffer, Interpreter.Options().apply { numThreads = THREADS_PER_INTERPRETER }) }
+            }.awaitAll()
+            inputIsNchw = interpreters.first().getInputTensor(0).shape()[1] == 3
+            val blank = Bitmap.createBitmap(INPUT_SIZE, INPUT_SIZE, Bitmap.Config.ARGB_8888)
+            interpreters.map { async { embed(it, blank) } }.awaitAll()
+            interpreters
+        }.also { pool = it }
+    }
+
+    /**
+     * Only the crop's best matches count: in a crowded crop the softmax spreads the
+     * probability and absolute scores drop, but the top 3 stay a reliable signal.
+     */
+    private fun keepBestMatches(probs: FloatArray, bestScore: FloatArray) {
+        val top = probs.indices.sortedByDescending { probs[it] }.take(TOP_PER_CROP)
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "crop top: " + top.joinToString {
+                "${labelSpace.labels[it]}=${"%.2f".format(probs[it])}"
+            })
         }
+        for (i in top) {
+            if (probs[i] > bestScore[i]) bestScore[i] = probs[i]
+        }
+    }
+
+    /** The ingredients above the threshold so far, best first. */
+    private fun results(bestScore: FloatArray, language: AppLanguage): List<DetectedIngredient> {
+        val distractors = labelSpace.distractors
+        return bestScore.indices
+            .filter { distractors.getOrElse(it) { false }.not() && bestScore[it] >= MIN_PROB }
+            // Different labels with the same display name (e.g. the milk variants)
+            // collapse into a single result, with the best score
+            .groupBy { labelSpace.displayName(it, language) }
+            .map { (name, indices) -> name to indices.maxOf { bestScore[it] } }
+            .sortedByDescending { (_, score) -> score }
+            .take(MAX_RESULTS)
+            .map { (name, score) ->
+                DetectedIngredient(
+                    name = name.replaceFirstChar(Char::uppercase),
+                    // CLIP classifies, it doesn't count: placeholder quantity
+                    quantity = "1 pc",
+                    confidence = score
+                )
+            }
+    }
 
     /**
      * Multi-scale square crops with 25% overlap: the full frame squeezes small
      * objects below the encoder's useful resolution (256 px), so the photo is
      * scanned at two finer scales. The last tile of each row and column is
-     * anchored to the edge so the photo's margins aren't lost.
+     * anchored to the edge so the photo's margins aren't lost. The coarser scale
+     * comes first: it covers the whole photo in a third of the work, so the first
+     * ingredients turn up early.
      */
-    private fun generateCrops(bitmap: Bitmap): List<Bitmap> {
+    private fun cropsOf(bitmap: Bitmap): List<Crop> {
         val minSide = minOf(bitmap.width, bitmap.height)
-        val crops = mutableListOf<Bitmap>()
+        val crops = mutableListOf<Crop>()
         for (scale in CROP_SCALES) {
             val side = (minSide * scale).toInt()
             val step = side * 3 / 4
             for (y in edgeAnchoredSteps(bitmap.height, side, step)) {
                 for (x in edgeAnchoredSteps(bitmap.width, side, step)) {
-                    crops += Bitmap.createBitmap(bitmap, x, y, side, side)
+                    crops += Crop(
+                        x = x,
+                        y = y,
+                        side = side,
+                        region = PhotoRegion(
+                            left = x.toFloat() / bitmap.width,
+                            top = y.toFloat() / bitmap.height,
+                            right = (x + side).toFloat() / bitmap.width,
+                            bottom = (y + side).toFloat() / bitmap.height
+                        )
+                    )
                 }
             }
         }

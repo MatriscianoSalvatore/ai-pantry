@@ -1,24 +1,35 @@
 package com.smatrisciano.aipantry.recipes.presentation
 
-import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Wait
 import com.smatrisciano.aipantry.recipes.domain.GenerationProgress
-import com.smatrisciano.aipantry.recipes.domain.models.Recipe
+import com.smatrisciano.aipantry.recipes.domain.ListedRecipe
+import com.smatrisciano.aipantry.recipes.domain.NextRecipe
+import com.smatrisciano.aipantry.recipes.domain.RECIPES_PER_LIST
 
 data class RecipesState(
+    /** False until the list arrives from the repository, possibly already written. */
+    val isLoaded: Boolean = false,
+    /** Different for every list: a regenerated one starts from the top. */
+    val listId: Long = -1,
+    /** In display order; more arrive while [isGenerating]. */
+    val recipes: List<ListedRecipe> = emptyList(),
     val isGenerating: Boolean = true,
-    val progressLog: List<GenerationProgress> = emptyList(),
-    val engineName: String = "",
-    val recipes: List<Recipe> = emptyList(),
-    val ingredientCount: Int = 0,
-    /** List generation failed: error shown with a Retry button. */
+    /** List generation failed without a single recipe: error shown with a Retry button. */
     val generationFailed: Boolean = false,
-    /** On-demand generation of the opened recipe's instructions. */
-    val isDetailLoading: Boolean = false,
-    val detailFailed: Boolean = false,
-    /** How long the two generation steps are expected to take, for the progress bars. */
-    val generationExpectedMillis: Long = Wait.RECIPES.defaultMillis,
-    val detailExpectedMillis: Long = Wait.RECIPE_DETAILS.defaultMillis,
-    /** The step is done: its progress bar runs to 100% before the result shows. */
-    val generationCompleted: Boolean = false,
-    val detailCompleted: Boolean = false
-)
+    val progressLog: List<GenerationProgress> = emptyList(),
+    /** How far the list is (0..1), from what the model has actually read and written. */
+    val progress: Float = 0f,
+    val expectedCount: Int = RECIPES_PER_LIST,
+    /** While the list grows: the recipe on its way, with its own progress. */
+    val nextRecipe: NextRecipe? = null,
+    /**
+     * A list written ahead of time is still shown being made, the first time: the
+     * wait screen stays up for a few seconds, its bar running up to where the list is.
+     */
+    val isRevealing: Boolean = false,
+    val revealProgress: Float = 0f,
+    val engineName: String = "",
+    val ingredientCount: Int = 0
+) {
+    /** A first answer wasn't enough: the model is writing more recipes to add to these. */
+    val isToppingUp: Boolean get() = GenerationProgress.Retrying in progressLog
+}

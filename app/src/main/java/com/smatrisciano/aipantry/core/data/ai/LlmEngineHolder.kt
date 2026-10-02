@@ -11,14 +11,25 @@ import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * LiteRT-LM engine cache: loading the model costs seconds and GBs of RAM, so
@@ -80,6 +91,86 @@ class LlmEngineHolder(private val context: Context) {
     }
 
     /**
+     * The model's answer to [prompt], a piece at a time as it is written, in a
+     * throwaway conversation with the requested sampling parameters. Stopping the
+     * collection stops the native generation too, and the flow only completes once
+     * the engine has let go of it: the next conversation never overlaps this one.
+     * With [stallTimeoutMillis], an answer that goes that long without a new piece
+     * fails with [GenerationStalledException] (a hung GPU never writes anything).
+     */
+    fun streamAnswer(
+        model: LlmModel,
+        file: File,
+        prompt: String,
+        temperature: Double,
+        topK: Int,
+        topP: Double,
+        seed: Int,
+        stallTimeoutMillis: Long? = null
+    ): Flow<String> = flow {
+        val conversation = createConversation(model, file, temperature, topK, topP, seed)
+        val pieces = Channel<String>(Channel.UNLIMITED)
+        val finished = CompletableDeferred<Unit>()
+        val stopRequested = AtomicBoolean(false)
+        try {
+            conversation.sendMessageAsync(
+                Contents.of(Content.Text(prompt)),
+                object : MessageCallback {
+                    override fun onMessage(message: Message) {
+                        pieces.trySend(message.text())
+                    }
+
+                    override fun onDone() {
+                        finished.complete(Unit)
+                        pieces.close()
+                    }
+
+                    override fun onError(throwable: Throwable) {
+                        finished.complete(Unit)
+                        // The engine reports its own cancellation as a CancellationException:
+                        // unless it was asked for, it is a failure like any other
+                        val error = if (throwable is CancellationException && !stopRequested.get()) {
+                            IllegalStateException("Generation interrupted by the engine", throwable)
+                        } else {
+                            throwable
+                        }
+                        pieces.close(error)
+                    }
+                },
+                emptyMap()
+            )
+            while (true) {
+                val next = if (stallTimeoutMillis == null) {
+                    pieces.receiveCatching()
+                } else {
+                    withTimeoutOrNull(stallTimeoutMillis) { pieces.receiveCatching() }
+                        ?: throw GenerationStalledException(stallTimeoutMillis)
+                }
+                if (next.isClosed) {
+                    next.exceptionOrNull()?.let { throw it }
+                    break
+                }
+                emit(next.getOrThrow())
+            }
+        } finally {
+            withContext(NonCancellable) {
+                if (!finished.isCompleted) {
+                    stopRequested.set(true)
+                    conversation.cancelProcess()
+                }
+                // The prompt reading can't be interrupted: the engine stops at its end.
+                // A native call stuck on a broken GPU never lets go: closing the
+                // conversation under it would crash, so it is left to the engine teardown
+                if (withTimeoutOrNull(STOP_TIMEOUT_MS) { finished.await() } != null) {
+                    conversation.close()
+                } else {
+                    Log.w(TAG, "Generation didn't stop in ${STOP_TIMEOUT_MS}ms, conversation left open")
+                }
+            }
+        }
+    }
+
+    /**
      * At startup: loads the engine and, if it ended up on GPU, checks with a tiny
      * inference that the GPU really works (on some devices the accelerator doesn't
      * load and inference hangs). If the probe times out, marks the GPU broken and
@@ -87,6 +178,22 @@ class LlmEngineHolder(private val context: Context) {
      * Detached job: a possibly stuck native thread doesn't block the warm-up.
      */
     suspend fun warmUp(model: LlmModel, file: File) {
+        try {
+            loadAndProbe(model, file)
+        } finally {
+            _isWarm.value = true
+        }
+    }
+
+    private val _isWarm = MutableStateFlow(false)
+
+    /**
+     * True once the startup warm-up is over, whatever its outcome: inference nobody
+     * is waiting for holds off until then, so it never runs alongside the GPU probe.
+     */
+    val isWarm: StateFlow<Boolean> = _isWarm.asStateFlow()
+
+    private suspend fun loadAndProbe(model: LlmModel, file: File) {
         acquire(model, file)
         if (!currentBackendIsGpu()) return
 
@@ -182,8 +289,14 @@ class LlmEngineHolder(private val context: Context) {
         // GPU probe at startup: if the tiny inference doesn't answer in time, the
         // GPU is unusable on this device
         const val GPU_PROBE_TIMEOUT_MS = 120_000L
+
+        // A stopped generation still finishes reading its prompt: seconds on a CPU
+        const val STOP_TIMEOUT_MS = 30_000L
     }
 }
+
+/** An answer that stopped coming: on a degraded GPU driver inference can hang. */
+class GenerationStalledException(millis: Long) : Exception("No output from the model for ${millis}ms")
 
 /** LiteRT-LM exposes no direct text on [Message]: it has to be extracted from its [Content.Text]. */
 internal fun Message.text(): String =

@@ -106,7 +106,7 @@ private fun AiPantryNavHost() {
                         when (navigation) {
                             is RecipesActions.Navigation.GoToDetail ->
                                 navController.navigate(
-                                    Destination.RecipeRoutes.detail(navigation.recipeIndex).route
+                                    Destination.RecipeRoutes.detail(navigation.recipeId).route
                                 )
                             RecipesActions.Navigation.GoBack -> navController.popBackStack()
                         }
@@ -117,15 +117,15 @@ private fun AiPantryNavHost() {
             composable(
                 route = Destination.RecipeRoutes.detail.route,
                 arguments = listOf(
-                    navArgument(NavArgument.RecipeIndex.argument) { type = NavType.IntType }
+                    navArgument(NavArgument.RecipeId.argument) { type = NavType.IntType }
                 )
             ) { backStackEntry ->
                 val viewModel: RecipesViewModel = backStackEntry.sharedViewModel(navController)
-                val recipeIndex =
-                    backStackEntry.arguments?.getInt(NavArgument.RecipeIndex.argument) ?: 0
+                val recipeId =
+                    backStackEntry.arguments?.getInt(NavArgument.RecipeId.argument) ?: 0
                 RecipeDetailScreenRoot(
                     viewModel = viewModel,
-                    recipeIndex = recipeIndex,
+                    recipeId = recipeId,
                     onBack = { navController.popBackStack() }
                 )
             }

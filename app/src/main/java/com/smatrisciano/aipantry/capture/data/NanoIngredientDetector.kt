@@ -10,6 +10,7 @@ import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.generateContentRequest
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
+import com.smatrisciano.aipantry.capture.domain.ScanProgress
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +62,12 @@ class NanoIngredientDetector : IngredientDetector {
         false
     }
 
-    override suspend fun detect(bitmap: Bitmap, target: ScanTarget): List<DetectedIngredient> {
+    // One request for the whole photo: there is no progress to report along the way
+    override suspend fun detect(
+        bitmap: Bitmap,
+        target: ScanTarget,
+        onProgress: (ScanProgress) -> Unit
+    ): List<DetectedIngredient> {
         val response = model.generateContent(
             generateContentRequest(ImagePart(bitmap.downscaled()), TextPart(DetectionPrompt.build(target))) {
                 temperature = 0.2f

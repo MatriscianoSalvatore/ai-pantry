@@ -3,10 +3,10 @@ package com.smatrisciano.aipantry.recipes.presentation
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -53,6 +53,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -62,10 +63,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
@@ -87,6 +87,7 @@ import com.smatrisciano.aipantry.core.presentation.composables.WaitProgressBar
 import com.smatrisciano.aipantry.core.presentation.theme.extendedColors
 import com.smatrisciano.aipantry.inventory.presentation.composables.ingredientEmoji
 import com.smatrisciano.aipantry.recipes.domain.GenerationProgress
+import com.smatrisciano.aipantry.recipes.domain.NextRecipe
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 import com.smatrisciano.aipantry.recipes.domain.models.RecipeIngredient
 import com.smatrisciano.aipantry.recipes.presentation.RecipesActions.Interaction
@@ -94,6 +95,7 @@ import com.smatrisciano.aipantry.recipes.presentation.RecipesActions.Navigation
 import com.smatrisciano.aipantry.recipes.presentation.composables.CookingWaitPhrases
 import com.smatrisciano.aipantry.recipes.presentation.composables.DifficultyBadge
 import com.smatrisciano.aipantry.recipes.presentation.composables.dishEmoji
+import kotlinx.coroutines.delay
 
 @Composable
 fun RecipesScreenRoot(
@@ -112,8 +114,11 @@ fun RecipesScreenRoot(
     )
 }
 
-/** Which body is on screen: a failure wins over a generation in progress. */
-private enum class Phase { FAILED, GENERATING, LIST }
+/**
+ * Which body is on screen: the wait until the first recipe is written, then the
+ * list, which keeps growing while the model writes the others.
+ */
+private enum class Phase { LOADING, FAILED, GENERATING, LIST }
 
 @Composable
 private fun RecipesScreen(
@@ -121,13 +126,15 @@ private fun RecipesScreen(
     onAction: (RecipesActions) -> Unit
 ) {
     val phase = when {
+        state.isRevealing -> Phase.GENERATING
+        !state.isLoaded -> Phase.LOADING
+        state.recipes.isNotEmpty() -> Phase.LIST
         state.generationFailed -> Phase.FAILED
-        state.isGenerating -> Phase.GENERATING
-        else -> Phase.LIST
+        else -> Phase.GENERATING
     }
-    // One scroll state per generation: a regenerated list starts from the top,
-    // while the position survives a trip to a recipe and back
-    val listState = key(state.isGenerating) { rememberLazyListState() }
+    // One scroll state per list: a regenerated list starts from the top, while the
+    // position survives a trip to a recipe and back
+    val listState = key(state.listId) { rememberLazyListState() }
     val scrolledPastHeader by remember(listState) {
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
@@ -137,7 +144,7 @@ private fun RecipesScreen(
         topBar = {
             RecipesTopBar(
                 showTitle = phase == Phase.LIST && scrolledPastHeader,
-                showRegenerate = !state.isGenerating,
+                showRegenerate = !state.isGenerating && !state.isRevealing,
                 onBack = { onAction(Navigation.GoBack) },
                 // The button stays tappable while it fades out: ignore taps once generating
                 onRegenerate = { if (!state.isGenerating) onAction(Interaction.OnRegenerateClick) }
@@ -151,6 +158,8 @@ private fun RecipesScreen(
             label = "recipesPhase"
         ) { target ->
             when (target) {
+                // A list already written comes in a moment: no wait screen flashing by
+                Phase.LOADING -> Spacer(modifier = Modifier.fillMaxSize())
                 Phase.FAILED -> GenerationError(
                     // Same as above: the outgoing error still takes taps during the cross-fade
                     onRetry = { if (!state.isGenerating) onAction(Interaction.OnRegenerateClick) },
@@ -333,9 +342,9 @@ private fun GenerationError(
 }
 
 /**
- * The wait while Gemma writes the list: the orb, a rotating kitchen phrase,
- * the simulated progress and a checklist of the generator's real steps, with
- * the engine pinned at the bottom.
+ * The wait until Gemma has written the first recipe: the orb, a rotating kitchen
+ * phrase, the progress and a checklist of the generator's real steps, with the
+ * engine pinned at the bottom.
  */
 @Composable
 private fun GeneratingContent(
@@ -380,8 +389,7 @@ private fun GeneratingContent(
                 )
                 Spacer(modifier = Modifier.height(28.dp))
                 WaitProgressBar(
-                    expectedMillis = state.generationExpectedMillis,
-                    completed = state.generationCompleted,
+                    progress = if (state.isRevealing) state.revealProgress else state.progress,
                     modifier = Modifier.fillMaxWidth(),
                     // Neutral track: the default one is the tangerine secondary container
                     trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -389,7 +397,6 @@ private fun GeneratingContent(
                 AnimatedVisibility(visible = state.progressLog.isNotEmpty()) {
                     ProgressChecklist(
                         log = state.progressLog,
-                        allDone = state.generationCompleted,
                         modifier = Modifier.padding(top = 28.dp)
                     )
                 }
@@ -406,12 +413,11 @@ private fun GeneratingContent(
 
 /**
  * The generator's steps as a checklist: every step but the last is done, and
- * the last one spins until the whole list is ready.
+ * the last one spins until the first recipe is ready.
  */
 @Composable
 private fun ProgressChecklist(
     log: List<GenerationProgress>,
-    allDone: Boolean,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -428,7 +434,7 @@ private fun ProgressChecklist(
             ) {
                 ProgressStep(
                     progress = progress,
-                    done = index < log.lastIndex || allDone,
+                    done = index < log.lastIndex,
                     modifier = Modifier.padding(top = if (index > 0) 8.dp else 0.dp)
                 )
             }
@@ -497,6 +503,10 @@ private fun progressLabel(progress: GenerationProgress): String = when (progress
     GenerationProgress.Retrying -> stringResource(R.string.progress_retrying)
 }
 
+/**
+ * The recipes written so far and, while the model writes the others, a card for
+ * the next one with the progress. New recipes slide into place as they arrive.
+ */
 @Composable
 private fun RecipeList(
     state: RecipesState,
@@ -504,7 +514,7 @@ private fun RecipeList(
     padding: PaddingValues,
     onRecipeClick: (Int) -> Unit
 ) {
-    val entranceClock = rememberEntranceClock()
+    val played = rememberSaveable(state.listId, saver = PlayedEntrancesSaver) { mutableSetOf() }
     // Only the top inset is applied to the list: it scrolls behind the
     // transparent navigation bar and its last card clears it via contentPadding
     LazyColumn(
@@ -520,20 +530,126 @@ private fun RecipeList(
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item(key = "header") {
+        item(key = HEADER_KEY) {
             ListHeader(
                 ingredientCount = state.ingredientCount,
                 engineName = state.engineName,
-                modifier = Modifier.entrance(position = 0, clock = entranceClock)
+                modifier = Modifier.entrance(rememberEntrance(HEADER_KEY, position = 0, played))
             )
         }
-        itemsIndexed(state.recipes) { index, recipe ->
+        itemsIndexed(state.recipes, key = { _, item -> item.id }) { index, item ->
             RecipeCard(
-                recipe = recipe,
-                onClick = { onRecipeClick(index) },
-                modifier = Modifier.entrance(position = index + 1, clock = entranceClock)
+                recipe = item.recipe,
+                onClick = { onRecipeClick(item.id) },
+                modifier = Modifier
+                    // The entrance below does the fading in; this moves the cards
+                    // when one is written above them
+                    .animateItem(fadeInSpec = null)
+                    .entrance(rememberEntrance("recipe-${item.id}", position = index + 1, played))
             )
         }
+        if (state.isGenerating) {
+            item(key = PENDING_KEY) {
+                PendingRecipeCard(
+                    number = (state.recipes.size + 1).coerceAtMost(state.expectedCount),
+                    total = state.expectedCount,
+                    next = state.nextRecipe,
+                    toppingUp = state.isToppingUp,
+                    modifier = Modifier
+                        .animateItem(fadeInSpec = null)
+                        .entrance(rememberEntrance(PENDING_KEY, position = state.recipes.size + 1, played))
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Stands in for the recipe the model is writing: what number it is, the kitchen
+ * phrases and how far that recipe is.
+ */
+@Composable
+private fun PendingRecipeCard(
+    number: Int,
+    total: Int,
+    next: NextRecipe?,
+    toppingUp: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.extendedColors.card,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // As wide as the dish avatars of the cards above
+                AiOrb(size = 64.dp)
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.writing_recipe, number, total),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    if (toppingUp) {
+                        Text(
+                            text = stringResource(R.string.looking_for_more_recipes),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        CookingWaitPhrases(
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Start,
+                            // Full width and a minimum height, so the card doesn't jump as phrases change
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 20.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            // A new bar for every recipe the model starts, so each one runs from zero
+            key(next?.key) {
+                val progress = next?.progress
+                if (progress != null) {
+                    WaitProgressBar(
+                        progress = progress,
+                        modifier = Modifier.fillMaxWidth(),
+                        // Neutral track: the default secondary container is tangerine
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
+                } else {
+                    NotStartedBar(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The recipe isn't being written yet (the model is reading its prompt, or writing
+ * again what it had written before an interruption): a bar with no percentage,
+ * as tall as the real one so the card doesn't jump.
+ */
+@Composable
+private fun NotStartedBar(modifier: Modifier = Modifier) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        LinearProgressIndicator(
+            modifier = Modifier
+                .weight(1f)
+                .height(6.dp),
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            strokeCap = StrokeCap.Round,
+            gapSize = 0.dp
+        )
+        // The percentage slot of the real bar, empty
+        Spacer(modifier = Modifier.width(56.dp))
     }
 }
 
@@ -579,7 +695,12 @@ private fun RecipeCard(
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        // The card grows when the details arrive with the "why it fits" line
+        Column(
+            modifier = Modifier
+                .animateContentSize()
+                .padding(16.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 EmojiAvatar(emoji = emoji, size = 64.dp)
                 Spacer(modifier = Modifier.width(16.dp))
@@ -600,8 +721,9 @@ private fun RecipeCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            // whySuitable is generated on demand in the detail screen: in the list it
-            // is often empty, and the ingredient strip below already says what's used
+            // whySuitable comes with the details, written when the recipe is opened (or
+            // ahead of time for the one most likely to be): until then the ingredient
+            // strip below already says what's used
             if (recipe.whySuitable.isNotBlank()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
@@ -734,38 +856,44 @@ private fun MissingIngredientsPill(missing: List<RecipeIngredient>) {
 }
 
 /**
- * Clock, in milliseconds, for the list's staggered entrance. Saved once played,
- * so coming back from a recipe doesn't replay it; a regenerated list is a new
- * composition and plays it again.
+ * Entrance of the item with [key], played the first time it shows: the items on
+ * screen when the list opens follow one another, [position] steps apart, and the
+ * ones the model writes later come in as they arrive. [played] remembers the items
+ * that have had theirs, so coming back from a recipe doesn't replay it.
  */
 @Composable
-private fun rememberEntranceClock(): Animatable<Float, AnimationVector1D> {
-    var played by rememberSaveable { mutableStateOf(false) }
-    val clock = remember { Animatable(if (played) ENTRANCE_TOTAL_MILLIS else 0f) }
-    LaunchedEffect(clock) {
-        clock.animateTo(
-            targetValue = ENTRANCE_TOTAL_MILLIS,
-            animationSpec = tween(ENTRANCE_TOTAL_MILLIS.toInt(), easing = LinearEasing)
-        )
-        played = true
+private fun rememberEntrance(
+    key: String,
+    position: Int,
+    played: MutableSet<String>
+): Animatable<Float, AnimationVector1D> {
+    val fraction = remember(key) { Animatable(if (key in played) 1f else 0f) }
+    LaunchedEffect(key) {
+        if (fraction.value < 1f) {
+            delay(position.coerceAtMost(MAX_STAGGERED_ITEMS) * STAGGER_MILLIS)
+            fraction.animateTo(1f, tween(ENTER_MILLIS, easing = FastOutSlowInEasing))
+        }
+        played += key
     }
-    return clock
+    return fraction
 }
 
 /**
- * Fades the item in while it rises into place, [position] steps after the
- * first one. Read in the layer, so the animation never recomposes the list;
- * items first composed after the entrance (scrolling) just appear.
+ * Fades the item in while it rises into place. Read in the layer, so the
+ * animation never recomposes the list.
  */
-private fun Modifier.entrance(
-    position: Int,
-    clock: Animatable<Float, AnimationVector1D>
-): Modifier = graphicsLayer {
-    val start = position.coerceAtMost(MAX_STAGGERED_ITEMS) * STAGGER_MILLIS
-    val fraction = FastOutSlowInEasing.transform(((clock.value - start) / ENTER_MILLIS).coerceIn(0f, 1f))
-    alpha = fraction
-    translationY = (1f - fraction) * ENTER_OFFSET.toPx()
+private fun Modifier.entrance(fraction: Animatable<Float, AnimationVector1D>): Modifier = graphicsLayer {
+    alpha = fraction.value
+    translationY = (1f - fraction.value) * ENTER_OFFSET.toPx()
 }
+
+private val PlayedEntrancesSaver = listSaver<MutableSet<String>, String>(
+    save = { it.toList() },
+    restore = { it.toMutableSet() }
+)
+
+private const val HEADER_KEY = "header"
+private const val PENDING_KEY = "pending"
 
 private const val PHASE_FADE_MILLIS = 250
 
@@ -774,8 +902,7 @@ private val STRIP_AVATAR_SIZE = 28.dp
 // 28dp avatars overlapping by 8dp
 private val STRIP_AVATAR_STEP = 20.dp
 
-private const val STAGGER_MILLIS = 65f
-private const val ENTER_MILLIS = 320f
+private const val STAGGER_MILLIS = 65L
+private const val ENTER_MILLIS = 320
 private const val MAX_STAGGERED_ITEMS = 6
-private const val ENTRANCE_TOTAL_MILLIS = MAX_STAGGERED_ITEMS * STAGGER_MILLIS + ENTER_MILLIS
 private val ENTER_OFFSET = 12.dp

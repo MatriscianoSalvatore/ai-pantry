@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
+import com.smatrisciano.aipantry.capture.domain.ScanProgress
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import kotlinx.coroutines.CancellationException
 
@@ -24,11 +25,20 @@ class AdaptiveIngredientDetector(
     override val engineName: String
         get() = lastUsed.engineName
 
-    override suspend fun detect(bitmap: Bitmap, target: ScanTarget): List<DetectedIngredient> {
+    /** Only the detector the next scan is going to use. */
+    override suspend fun warmUp() {
+        if (!nano.isUsable()) fallback.warmUp()
+    }
+
+    override suspend fun detect(
+        bitmap: Bitmap,
+        target: ScanTarget,
+        onProgress: (ScanProgress) -> Unit
+    ): List<DetectedIngredient> {
         if (nano.isUsable()) {
             lastUsed = nano
             try {
-                return nano.detect(bitmap, target)
+                return nano.detect(bitmap, target, onProgress)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -36,7 +46,7 @@ class AdaptiveIngredientDetector(
             }
         }
         lastUsed = fallback
-        return fallback.detect(bitmap, target)
+        return fallback.detect(bitmap, target, onProgress)
     }
 
     private companion object {

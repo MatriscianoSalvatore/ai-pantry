@@ -6,6 +6,7 @@ import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
+import com.smatrisciano.aipantry.capture.domain.ScanProgress
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.LlmModel
@@ -37,9 +38,11 @@ class LlmVisionIngredientDetector(
     override val engineName: String
         get() = "${modelRepository.activeModel().displayName} vision · LiteRT"
 
+    // One inference on the whole photo: there is no progress to report along the way
     override suspend fun detect(
         bitmap: Bitmap,
-        target: ScanTarget
+        target: ScanTarget,
+        onProgress: (ScanProgress) -> Unit
     ): List<DetectedIngredient> = withContext(Dispatchers.Default) {
         val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
         require(model.supportsVision) { "Active model has no vision support" }

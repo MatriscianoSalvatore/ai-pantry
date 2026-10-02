@@ -1,18 +1,15 @@
 package com.smatrisciano.aipantry.recipes.presentation
 
 import android.os.SystemClock
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
-import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Wait
 import com.smatrisciano.aipantry.core.presentation.composables.WAIT_COMPLETION_MILLIS
-import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.inventory.domain.repository.InventoryRepository
-import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
+import com.smatrisciano.aipantry.recipes.domain.ListStatus
+import com.smatrisciano.aipantry.recipes.domain.RecipeList
+import com.smatrisciano.aipantry.recipes.domain.RecipeRepository
+import com.smatrisciano.aipantry.recipes.domain.RecipeSession
 import com.smatrisciano.aipantry.recipes.presentation.RecipesActions.Interaction
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,106 +19,76 @@ import kotlinx.coroutines.launch
 
 class RecipesViewModel(
     private val inventoryRepository: InventoryRepository,
-    private val recipeGenerator: RecipeGenerator,
-    private val waitTimes: WaitTimeEstimator
+    private val recipeRepository: RecipeRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(RecipesState(engineName = recipeGenerator.engineName))
+    private val _uiState = MutableStateFlow(RecipesState(engineName = recipeRepository.engineName))
     val uiState = _uiState.asStateFlow()
 
-    private var inventory: List<Ingredient> = emptyList()
-
-    /** The running generation: one at a time, the engine can't serve two conversations. */
-    private var generationJob: Job? = null
+    private var session: RecipeSession? = null
 
     init {
-        generate()
+        viewModelScope.launch {
+            val inventory = inventoryRepository.observeInventory().first()
+            _uiState.update { it.copy(ingredientCount = inventory.size) }
+            val opened = recipeRepository.open(inventory)
+            session = opened
+            if (opened.writtenAhead) reveal()
+            opened.list.collect { list -> _uiState.update { it.with(list) } }
+        }
     }
 
     fun onAction(action: Interaction) {
         when (action) {
-            is Interaction.OnRegenerateClick -> generate()
-            is Interaction.OnRecipeOpened -> loadDetails(action.recipeIndex)
+            is Interaction.OnRegenerateClick -> session?.regenerate()
+            is Interaction.OnRecipeOpened -> session?.showDetails(action.recipeId)
+            is Interaction.OnRecipeClosed -> session?.showList()
+            is Interaction.OnRetryDetailsClick -> session?.retryDetails(action.recipeId)
         }
     }
 
-    private fun generate() {
-        // A double tap on Regenerate/Retry (still tappable while they fade out) is ignored
-        if (generationJob?.isActive == true) return
-        _uiState.update {
-            it.copy(
-                isGenerating = true,
-                progressLog = emptyList(),
-                recipes = emptyList(),
-                generationFailed = false,
-                generationExpectedMillis = waitTimes.expectedMillis(Wait.RECIPES),
-                generationCompleted = false
-            )
-        }
-        generationJob = viewModelScope.launch {
-            val start = SystemClock.elapsedRealtime()
-            inventory = inventoryRepository.observeInventory().first()
-            _uiState.update { it.copy(ingredientCount = inventory.size) }
-            runCatching {
-                recipeGenerator.generate(inventory) { progress ->
-                    _uiState.update { it.copy(progressLog = it.progressLog + progress) }
-                }
-            }.onSuccess { recipes ->
-                waitTimes.record(Wait.RECIPES, SystemClock.elapsedRealtime() - start)
-                _uiState.update { it.copy(generationCompleted = true) }
-                delay(WAIT_COMPLETION_MILLIS)
-                _uiState.update {
-                    it.copy(
-                        isGenerating = false,
-                        recipes = recipes,
-                        engineName = recipeGenerator.engineName
-                    )
-                }
-            }.onFailure { error ->
-                if (error is CancellationException) throw error
-                Log.w(TAG, "Recipe generation failed", error)
-                _uiState.update { it.copy(isGenerating = false, generationFailed = true) }
-            }
-        }
+    override fun onCleared() {
+        session?.close()
     }
 
-    /** Instructions generated on demand the first time the recipe is opened. */
-    private fun loadDetails(index: Int) {
-        val recipe = _uiState.value.recipes.getOrNull(index) ?: return
-        if (recipe.steps.isNotEmpty() || _uiState.value.isDetailLoading) return
-        _uiState.update {
-            it.copy(
-                isDetailLoading = true,
-                detailFailed = false,
-                detailExpectedMillis = waitTimes.expectedMillis(Wait.RECIPE_DETAILS),
-                detailCompleted = false
-            )
-        }
+    /**
+     * The list was written ahead of time: the wait screen still stays up for
+     * [REVEAL_MILLIS], its bar running up to where the list really is (all the way,
+     * once it's complete), so the generation is seen happening on the device.
+     */
+    private fun reveal() {
+        _uiState.update { it.copy(isRevealing = true, revealProgress = 0f) }
         viewModelScope.launch {
             val start = SystemClock.elapsedRealtime()
-            runCatching { recipeGenerator.generateDetails(recipe, inventory) }
-                .onSuccess { detailed ->
-                    waitTimes.record(Wait.RECIPE_DETAILS, SystemClock.elapsedRealtime() - start)
-                    _uiState.update { it.copy(detailCompleted = true) }
-                    delay(WAIT_COMPLETION_MILLIS)
-                    _uiState.update { state ->
-                        state.copy(
-                            isDetailLoading = false,
-                            recipes = state.recipes.toMutableList().also { list ->
-                                if (index in list.indices) list[index] = detailed
-                            }
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    if (error is CancellationException) throw error
-                    Log.w(TAG, "Recipe details generation failed", error)
-                    _uiState.update { it.copy(isDetailLoading = false, detailFailed = true) }
-                }
+            while (true) {
+                val time = ((SystemClock.elapsedRealtime() - start).toFloat() / REVEAL_MILLIS).coerceAtMost(1f)
+                // Quick at first, slowing down towards the end
+                val eased = 1 - (1 - time) * (1 - time)
+                _uiState.update { it.copy(revealProgress = eased * it.progress) }
+                if (time >= 1f) break
+                delay(REVEAL_TICK_MILLIS)
+            }
+            // A moment to see the bar full before the recipes
+            delay(WAIT_COMPLETION_MILLIS)
+            _uiState.update { it.copy(isRevealing = false) }
         }
     }
 
+    private fun RecipesState.with(list: RecipeList) = copy(
+        isLoaded = true,
+        listId = list.id,
+        recipes = list.recipes,
+        isGenerating = list.status == ListStatus.GENERATING,
+        generationFailed = list.status == ListStatus.FAILED,
+        progressLog = list.steps,
+        progress = list.progress,
+        expectedCount = list.expectedCount,
+        nextRecipe = list.nextRecipe,
+        engineName = recipeRepository.engineName
+    )
+
     private companion object {
-        const val TAG = "RecipesViewModel"
+        const val REVEAL_MILLIS = 7_000L
+        const val REVEAL_TICK_MILLIS = 100L
     }
 }

@@ -1,5 +1,6 @@
 package com.smatrisciano.aipantry.recipes.data
 
+import com.smatrisciano.aipantry.recipes.domain.DetailsPart
 import com.smatrisciano.aipantry.recipes.domain.models.Difficulty
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
 import com.smatrisciano.aipantry.recipes.domain.models.RecipeIngredient
@@ -51,24 +52,27 @@ object RecipeJsonParser {
         // 1st pass as is; if it finds no objects but the output is escaped, unescape it
         val objects = extractObjects(cleaned)
             .ifEmpty { if ("\\\"" in cleaned) extractObjects(deEscape(cleaned)) else emptyList() }
-        val recipes = objects
-            .mapNotNull { obj -> runCatching { json.decodeFromString<RecipeDto>(obj) }.getOrNull() }
-            .filter { it.title.isNotBlank() }
-            .map { dto ->
-                Recipe(
-                    title = dto.title,
-                    whySuitable = dto.whySuitable,
-                    prepTimeMinutes = dto.prepTimeMinutes.coerceIn(1, 600),
-                    difficulty = parseDifficulty(dto.difficulty),
-                    usedIngredients = dto.usedIngredients.toIngredients(),
-                    missingIngredients = dto.missingIngredients.toIngredients(),
-                    steps = dto.steps.toCleanStrings(),
-                    variants = dto.variants.toCleanStrings()
-                )
-            }
+        val recipes = objects.mapNotNull(::parseRecipe)
 
         require(recipes.isNotEmpty()) { "No valid recipes in LLM output" }
         return recipes
+    }
+
+    /** One recipe from one JSON object of the list; null if it isn't one (no title, malformed). */
+    fun parseRecipe(objectJson: String): Recipe? {
+        val dto = runCatching { json.decodeFromString<RecipeDto>(objectJson) }.getOrNull()
+            ?.takeIf { it.title.isNotBlank() }
+            ?: return null
+        return Recipe(
+            title = dto.title,
+            whySuitable = dto.whySuitable,
+            prepTimeMinutes = dto.prepTimeMinutes.coerceIn(1, 600),
+            difficulty = parseDifficulty(dto.difficulty),
+            usedIngredients = dto.usedIngredients.toIngredients(),
+            missingIngredients = dto.missingIngredients.toIngredients(),
+            steps = dto.steps.toCleanStrings(),
+            variants = dto.variants.toCleanStrings()
+        )
     }
 
     @Serializable
@@ -94,14 +98,32 @@ object RecipeJsonParser {
         val objectJson = extractBalanced(cleaned, '{', '}')
             ?: (if ("\\\"" in cleaned) extractBalanced(deEscape(cleaned), '{', '}') else null)
             ?: error("No JSON object found in LLM output")
-        val dto = json.decodeFromString<DetailsDto>(objectJson)
-        val steps = dto.steps.toCleanStrings()
-        require(steps.isNotEmpty()) { "No steps in LLM output" }
+        val detailed = recipe.withDetails(json.decodeFromString<DetailsDto>(objectJson))
+        require(detailed.steps.isNotEmpty()) { "No steps in LLM output" }
+        return detailed
+    }
 
+    /** The details written so far: [recipe] with them, the part still coming and where the answer was cut. */
+    class PartialDetails(val recipe: Recipe, val writing: DetailsPart?, val end: Int)
+
+    /**
+     * The details in [rawOutput] while the model is still writing them: everything up
+     * to the last complete value (a step counts once finished, never half written).
+     * Null when nothing new is complete past [after], so an answer that hasn't moved on
+     * isn't parsed again.
+     */
+    fun parsePartialDetails(recipe: Recipe, rawOutput: CharSequence, after: Int = -1): PartialDetails? {
+        val closed = closeAtLastValue(rawOutput) ?: return null
+        if (closed.end <= after) return null
+        val dto = runCatching { json.decodeFromString<DetailsDto>(closed.json) }.getOrNull() ?: return null
+        return PartialDetails(recipe.withDetails(dto), detailsPart(closed.openKey), closed.end)
+    }
+
+    private fun Recipe.withDetails(dto: DetailsDto): Recipe {
         // In the list the small model often omits quantities: here (a focused task)
         // it produces them more reliably, so merge them where missing.
         val amounts = dto.ingredients.toIngredients()
-        val enriched = recipe.usedIngredients.map { ing ->
+        val enriched = usedIngredients.map { ing ->
             if (ing.quantity.isNotBlank()) return@map ing
             val match = amounts.firstOrNull {
                 it.quantity.isNotBlank() && it.name.lowercase().let { n ->
@@ -111,12 +133,21 @@ object RecipeJsonParser {
             if (match != null) ing.copy(quantity = match.quantity) else ing
         }
 
-        return recipe.copy(
-            whySuitable = dto.whySuitable.ifBlank { recipe.whySuitable },
+        return copy(
+            whySuitable = dto.whySuitable.ifBlank { whySuitable },
             usedIngredients = enriched,
-            steps = steps,
+            steps = dto.steps.toCleanStrings(),
             variants = dto.variants.toCleanStrings()
         )
+    }
+
+    /** The details part a top-level key holds, with the same aliases as [DetailsDto]. */
+    private fun detailsPart(key: String?): DetailsPart? = when (key?.lowercase()) {
+        "whysuitable", "why_suitable", "reason", "perche", "perché" -> DetailsPart.INTRO
+        "ingredients", "ingredienti" -> DetailsPart.INGREDIENTS
+        "steps", "passaggi", "procedimento" -> DetailsPart.STEPS
+        "variants", "varianti" -> DetailsPart.VARIANTS
+        else -> null
     }
 
     /**

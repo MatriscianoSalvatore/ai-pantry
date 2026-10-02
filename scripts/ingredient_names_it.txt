@@ -433,7 +433,6 @@ canned corn|mais in scatola
 coconut milk|latte di cocco
 broth cubes|dadi da brodo
 breadcrumbs|pangrattato
-polenta|polenta
 oats|fiocchi d'avena
 cornflakes|cornflakes
 cereal|cereali

@@ -10,23 +10,28 @@ data class DetectedIngredient(
     val confidence: Float
 )
 
-/** A region of the photo, in fractions of its width and height (0..1). */
-data class PhotoRegion(
-    val left: Float,
-    val top: Float,
-    val right: Float,
-    val bottom: Float
-)
+/**
+ * The regions of one pass over the photo, laid out as a grid: each region is a cell,
+ * [rows] by [columns] across the whole photo.
+ */
+data class ScanGrid(val rows: Int, val columns: Int) {
+    val cells: Int get() = rows * columns
+}
+
+/** A region of the photo: the cell it stands for in the grid of its [pass] (0 is the first). */
+data class ScanCell(val pass: Int, val row: Int, val column: Int)
 
 /**
  * How far the scan of a photo has got, for detectors that look at it one region
- * at a time: how many regions are done, which ones are being looked at right now
- * and what has turned up so far.
+ * at a time, in passes from coarse to fine: the grid of each pass, the regions done
+ * and the ones being looked at right now, and what has turned up so far.
  */
 data class ScanProgress(
+    val grids: List<ScanGrid>,
     val totalRegions: Int,
     val doneRegions: Int,
-    val activeRegions: List<PhotoRegion>,
+    val done: Set<ScanCell>,
+    val active: List<ScanCell>,
     val found: List<DetectedIngredient>
 )
 

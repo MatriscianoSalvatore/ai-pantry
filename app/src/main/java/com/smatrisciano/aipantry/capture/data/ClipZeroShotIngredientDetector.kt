@@ -6,7 +6,8 @@ import android.os.SystemClock
 import android.util.Log
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
-import com.smatrisciano.aipantry.capture.domain.PhotoRegion
+import com.smatrisciano.aipantry.capture.domain.ScanCell
+import com.smatrisciano.aipantry.capture.domain.ScanGrid
 import com.smatrisciano.aipantry.capture.domain.ScanProgress
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.core.domain.AppLanguage
@@ -92,8 +93,11 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
     @Volatile
     private var inputIsNchw = false
 
-    /** A square crop of the photo: where it is in pixels, and in fractions for the UI. */
-    private class Crop(val x: Int, val y: Int, val side: Int, val region: PhotoRegion)
+    /** A square crop of the photo: where it is in pixels, and the cell it stands for on screen. */
+    private class Crop(val x: Int, val y: Int, val side: Int, val cell: ScanCell)
+
+    /** The crops in the order they are looked at, and the grid of each pass they make. */
+    private class CropLayout(val crops: List<Crop>, val grids: List<ScanGrid>)
 
     /**
      * Labels and interpreters, ready before the shot (the camera has just opened):
@@ -115,15 +119,23 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
     ): List<DetectedIngredient> = withContext(Dispatchers.Default) {
         val start = SystemClock.elapsedRealtime()
         val interpreters = pool()
-        val crops = cropsOf(bitmap)
+        val layout = cropsOf(bitmap)
+        val crops = layout.crops
         val language = AppLanguage.current()
         val bestScore = FloatArray(labelSpace.labels.size)
         // Guards the scores and the progress: every worker reports as it goes
         val lock = Any()
         val active = linkedSetOf<Int>()
-        var done = 0
+        val done = mutableSetOf<ScanCell>()
         fun report() = onProgress(
-            ScanProgress(crops.size, done, active.map { crops[it].region }, results(bestScore, language))
+            ScanProgress(
+                grids = layout.grids,
+                totalRegions = crops.size,
+                doneRegions = done.size,
+                done = done.toSet(),
+                active = active.map { crops[it].cell },
+                found = results(bestScore, language)
+            )
         )
 
         synchronized(lock) { report() }
@@ -145,7 +157,7 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
                     synchronized(lock) {
                         keepBestMatches(probs, bestScore)
                         active -= index
-                        done++
+                        done += crop.cell
                         report()
                     }
                 }
@@ -215,31 +227,26 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
      * scanned at two finer scales. The last tile of each row and column is
      * anchored to the edge so the photo's margins aren't lost. The coarser scale
      * comes first: it covers the whole photo in a third of the work, so the first
-     * ingredients turn up early.
+     * ingredients turn up early. Each scale is a pass, its crops row by row: on screen
+     * they are the cells of a grid.
      */
-    private fun cropsOf(bitmap: Bitmap): List<Crop> {
+    private fun cropsOf(bitmap: Bitmap): CropLayout {
         val minSide = minOf(bitmap.width, bitmap.height)
         val crops = mutableListOf<Crop>()
-        for (scale in CROP_SCALES) {
+        val grids = mutableListOf<ScanGrid>()
+        CROP_SCALES.forEachIndexed { pass, scale ->
             val side = (minSide * scale).toInt()
             val step = side * 3 / 4
-            for (y in edgeAnchoredSteps(bitmap.height, side, step)) {
-                for (x in edgeAnchoredSteps(bitmap.width, side, step)) {
-                    crops += Crop(
-                        x = x,
-                        y = y,
-                        side = side,
-                        region = PhotoRegion(
-                            left = x.toFloat() / bitmap.width,
-                            top = y.toFloat() / bitmap.height,
-                            right = (x + side).toFloat() / bitmap.width,
-                            bottom = (y + side).toFloat() / bitmap.height
-                        )
-                    )
+            val rows = edgeAnchoredSteps(bitmap.height, side, step)
+            val columns = edgeAnchoredSteps(bitmap.width, side, step)
+            grids += ScanGrid(rows = rows.size, columns = columns.size)
+            rows.forEachIndexed { row, y ->
+                columns.forEachIndexed { column, x ->
+                    crops += Crop(x, y, side, ScanCell(pass, row, column))
                 }
             }
         }
-        return crops
+        return CropLayout(crops, grids)
     }
 
     /** Fixed-step offsets, with the last one anchored to the edge. */

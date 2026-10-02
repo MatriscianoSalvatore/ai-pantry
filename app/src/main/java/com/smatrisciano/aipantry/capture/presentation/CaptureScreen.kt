@@ -125,6 +125,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -165,7 +166,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.R
 import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
-import com.smatrisciano.aipantry.capture.domain.PhotoRegion
+import com.smatrisciano.aipantry.capture.domain.ScanCell
 import com.smatrisciano.aipantry.capture.domain.ScanProgress
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
 import com.smatrisciano.aipantry.capture.presentation.CaptureActions.Interaction
@@ -656,8 +657,8 @@ private fun AnalyzedPhoto(
                         .clip(shape)
                 )
             } else {
-                ScanRegions(
-                    regions = scan.activeRegions,
+                ScanGridOverlay(
+                    scan = scan,
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(shape)
@@ -942,48 +943,90 @@ private fun AnalyzingCard(scan: ScanProgress?) {
 }
 
 /**
- * The regions of the photo the model is looking at right now, drawn over the whole
- * photo: each fades in as the scan reaches it and out once done. As many at a time
- * as the detector has workers. Their line runs just inside the region, rounded like
- * the photo: along the photo's edges and around its corners it follows them exactly.
+ * The scan on the photo, one pass at a time: the photo split into the grid of that
+ * pass's regions, one cell each where the region lies. Cells still to be looked at
+ * are dimmed, each one lights up as its region is done, and the ones being looked
+ * at right now are outlined. Cells never overlap, however much the regions behind
+ * them do (each region reaches a little into its neighbours).
  */
 @Composable
-private fun ScanRegions(
-    regions: List<PhotoRegion>,
+private fun ScanGridOverlay(
+    scan: ScanProgress,
     modifier: Modifier = Modifier
 ) {
     val accent = MaterialTheme.extendedColors.aiGradient[1]
     val outline = lerp(accent, Color.White, 0.35f)
-    // Not the effect's own scope: a region must finish fading out when the list changes again
+    // The pass on screen: the first one not finished yet, or the last once all are
+    val pass = scan.grids.indices
+        .firstOrNull { pass -> scan.done.count { it.pass == pass } < scan.grids[pass].cells }
+        ?: scan.grids.lastIndex
+    val grid = scan.grids.getOrNull(pass) ?: return
+
+    // Each cell lights up on its own as its region is done
     val scope = rememberCoroutineScope()
-    val alphas = remember { mutableStateMapOf<PhotoRegion, Animatable<Float, AnimationVector1D>>() }
-    LaunchedEffect(regions) {
-        for (region in regions) {
-            if (region in alphas) continue
-            val alpha = Animatable(0f)
-            alphas[region] = alpha
-            scope.launch { alpha.animateTo(1f, tween(REGION_FADE_IN_MILLIS)) }
-        }
-        for ((region, alpha) in alphas.toList()) {
-            if (region in regions || alpha.targetValue == 0f) continue
-            scope.launch {
-                alpha.animateTo(0f, tween(REGION_FADE_OUT_MILLIS))
-                alphas.remove(region)
-            }
+    val lit = remember(pass) { mutableStateMapOf<ScanCell, Animatable<Float, AnimationVector1D>>() }
+    LaunchedEffect(scan.done, pass) {
+        for (cell in scan.done) {
+            if (cell.pass != pass || cell in lit) continue
+            val light = Animatable(0f)
+            lit[cell] = light
+            scope.launch { light.animateTo(1f, tween(CELL_LIGHT_MILLIS)) }
         }
     }
+    // The next pass dims the photo again, gently rather than all at once
+    val dim = remember(pass) { Animatable(if (pass == 0) 1f else 0f) }
+    LaunchedEffect(pass) { dim.animateTo(1f, tween(PASS_DIM_MILLIS)) }
+
+    val active = scan.active.filter { it.pass == pass }
     Canvas(modifier = modifier) {
+        val cellWidth = size.width / grid.columns
+        val cellHeight = size.height / grid.rows
+        val cellSize = DrawSize(cellWidth, cellHeight)
+        for (row in 0 until grid.rows) {
+            for (column in 0 until grid.columns) {
+                val light = lit[ScanCell(pass, row, column)]?.value ?: 0f
+                val topLeft = Offset(column * cellWidth, row * cellHeight)
+                drawRect(Color.Black.copy(alpha = CELL_DIM * dim.value * (1f - light)), topLeft, cellSize)
+                if (light > 0f) drawRect(accent.copy(alpha = 0.1f * light), topLeft, cellSize)
+            }
+        }
+        val gridLine = Color.White.copy(alpha = 0.18f)
+        val gridStroke = 1.dp.toPx()
+        for (column in 1 until grid.columns) {
+            val x = column * cellWidth
+            drawLine(gridLine, Offset(x, 0f), Offset(x, size.height), gridStroke)
+        }
+        for (row in 1 until grid.rows) {
+            val y = row * cellHeight
+            drawLine(gridLine, Offset(0f, y), Offset(size.width, y), gridStroke)
+        }
+        // Their line runs just inside the cell; at the photo's corners it turns with them
         val line = RegionStroke.toPx()
-        val corner = CornerRadius(PhotoCorner.toPx() - line / 2)
-        val stroke = Stroke(width = line)
-        for ((region, alpha) in alphas) {
-            val topLeft = Offset(region.left * size.width + line / 2, region.top * size.height + line / 2)
-            val regionSize = DrawSize(
-                (region.right - region.left) * size.width - line,
-                (region.bottom - region.top) * size.height - line
+        val turn = CornerRadius(PhotoCorner.toPx() - line / 2)
+        for (cell in active) {
+            val top = cell.row == 0
+            val bottom = cell.row == grid.rows - 1
+            val left = cell.column == 0
+            val right = cell.column == grid.columns - 1
+            val bounds = Rect(
+                left = cell.column * cellWidth + line / 2,
+                top = cell.row * cellHeight + line / 2,
+                right = (cell.column + 1) * cellWidth - line / 2,
+                bottom = (cell.row + 1) * cellHeight - line / 2
             )
-            drawRoundRect(accent.copy(alpha = 0.1f * alpha.value), topLeft, regionSize, corner)
-            drawRoundRect(outline.copy(alpha = alpha.value), topLeft, regionSize, corner, style = stroke)
+            val shape = Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        rect = bounds,
+                        topLeft = if (top && left) turn else CornerRadius.Zero,
+                        topRight = if (top && right) turn else CornerRadius.Zero,
+                        bottomRight = if (bottom && right) turn else CornerRadius.Zero,
+                        bottomLeft = if (bottom && left) turn else CornerRadius.Zero
+                    )
+                )
+            }
+            drawPath(shape, accent.copy(alpha = 0.22f))
+            drawPath(shape, outline, style = Stroke(width = line))
         }
     }
 }
@@ -1535,8 +1578,12 @@ private const val BACKDROP_DIM = 0.5f
 private const val BACKDROP_MILLIS = 400
 
 private val RegionStroke = 2.5.dp
-private const val REGION_FADE_IN_MILLIS = 180
-private const val REGION_FADE_OUT_MILLIS = 350
+
+// Cells of the scan grid: how dark the ones still to be looked at are, how quickly
+// one lights up once done, how gently the next pass dims the photo again
+private const val CELL_DIM = 0.5f
+private const val CELL_LIGHT_MILLIS = 250
+private const val PASS_DIM_MILLIS = 400
 
 private fun takePhoto(
     context: Context,

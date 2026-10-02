@@ -54,14 +54,16 @@ interface RecipeGenerator {
      * Writes a list of recipes for [ingredients] (without instructions: leaving them
      * out cuts the tokens to generate by ~4x), every recipe sent as soon as the model
      * has finished it. [round] picks the variation: 0 is the first list for these
-     * ingredients, and the same round always gives the same list. An interrupted
-     * generation resumes with what it had [received], from the attempt it was at and
-     * the [written] recipes that attempt had completed, without sending those recipes
-     * again.
+     * ingredients, and the same round always gives the same recipes. A list can grow
+     * round after round: the dishes it already has from [earlier] rounds don't come
+     * back, not even under another name. An interrupted generation resumes with what
+     * it had [received], from the attempt it was at and the [written] recipes that
+     * attempt had completed, without sending those recipes again.
      */
     fun generate(
         ingredients: List<Ingredient>,
         round: Int,
+        earlier: List<Recipe> = emptyList(),
         received: List<Recipe> = emptyList(),
         firstAttempt: Int = 0,
         written: Int = 0
@@ -74,5 +76,5 @@ interface RecipeGenerator {
     fun generateDetails(recipe: Recipe, round: Int): Flow<DetailsUpdate>
 }
 
-/** How many recipes a list asks the model for. */
+/** How many recipes a list asks the model for, at first and every time it grows. */
 const val RECIPES_PER_LIST = 4

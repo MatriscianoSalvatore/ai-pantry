@@ -39,6 +39,7 @@ data class RecipeList(
     /** The generator's steps so far, for the checklist on screen. */
     val steps: List<GenerationProgress>,
     val progress: Float,
+    /** How many recipes the list holds once the ones on their way are written. */
     val expectedCount: Int,
     /** While the list grows: the recipe on its way. */
     val nextRecipe: NextRecipe?
@@ -56,6 +57,9 @@ interface RecipeSession {
 
     /** A new list for the same ingredients. */
     fun regenerate()
+
+    /** More recipes for the same ingredients, added below the ones already there. */
+    fun addMore()
 
     /** The recipe is on screen: its details go first. */
     fun showDetails(recipeId: Int)

@@ -41,6 +41,7 @@ class RecipesViewModel(
     fun onAction(action: Interaction) {
         when (action) {
             is Interaction.OnRegenerateClick -> session?.regenerate()
+            is Interaction.OnMoreRecipesClick -> session?.addMore()
             is Interaction.OnRecipeOpened -> session?.showDetails(action.recipeId)
             is Interaction.OnRecipeClosed -> session?.showList()
             is Interaction.OnRetryDetailsClick -> session?.retryDetails(action.recipeId)

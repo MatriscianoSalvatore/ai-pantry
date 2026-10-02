@@ -50,8 +50,8 @@ import java.util.concurrent.atomic.AtomicLong
  * the inventory changes. Work ahead stops as soon as something else needs the model
  * and later resumes where it was.
  *
- * Lists are kept per ingredient set: opening the recipes again shows the same list,
- * and only "Regenerate" moves on to another one.
+ * Lists are kept per ingredient set: opening the recipes again shows the same list.
+ * "More recipes" makes it grow, and only "Regenerate" moves on to another one.
  */
 @OptIn(FlowPreview::class)
 class RecipeRepositoryImpl(
@@ -68,6 +68,8 @@ class RecipeRepositoryImpl(
     /** A recipe of a list and its details, as far as they have got. */
     private data class Entry(
         val id: Int,
+        /** The round of the list that wrote it. */
+        val round: Int,
         /** As the list wrote it: what the details are generated from. */
         val listed: Recipe,
         /** With the details written so far. */
@@ -80,14 +82,16 @@ class RecipeRepositoryImpl(
 
     /**
      * The current list for an ingredient set. With fixed seeds the model's output is
-     * deterministic (bit-identical on CPU): the same [round] always gives the same list,
-     * so an interrupted generation resumes into the very same recipes, and
-     * "Regenerate" moves on to the next round.
+     * deterministic (bit-identical on CPU): the same [round] always gives the same
+     * recipes, so an interrupted generation resumes into the very same ones. "More
+     * recipes" writes the next round below the recipes already there, "Regenerate"
+     * starts a new list from it.
      */
     private data class StoredList(
         val id: Long,
         val key: String,
         val ingredients: List<Ingredient>,
+        /** The round being written, or the last one written. */
         val round: Int,
         val usedAt: Long,
         val entries: List<Entry> = emptyList(),
@@ -104,9 +108,22 @@ class RecipeRepositoryImpl(
     ) {
         fun entry(recipeId: Int): Entry? = entries.firstOrNull { it.id == recipeId }
 
-        // Recipes that are missing something go last; with the same number of
-        // missing items, the model's relevance order stays
-        fun displayOrder(): List<Entry> = entries.sortedBy { it.listed.missingIngredients.size }
+        // Every round below the earlier ones. Within a round, recipes that are missing
+        // something go last; with the same number of missing items, the model's
+        // relevance order stays
+        fun displayOrder(): List<Entry> =
+            entries.sortedWith(compareBy({ it.round }, { it.listed.missingIngredients.size }))
+
+        /** The same list with the next round on its way, to be written below these recipes. */
+        fun grown(): StoredList = copy(
+            round = round + 1,
+            steps = emptyList(),
+            progress = 0f,
+            attempt = 0,
+            written = 0,
+            recipeProgress = null,
+            status = ListStatus.GENERATING
+        )
     }
 
     private inner class Session(val key: String, override val writtenAhead: Boolean) : RecipeSession {
@@ -119,6 +136,14 @@ class RecipeRepositoryImpl(
                 val current = all[key] ?: return@update all
                 // Written under the user's eyes: already seen
                 all + (key to newList(key, current.ingredients, current.round + 1).copy(opened = true))
+            }
+            focus.value = Focus(this, recipeId = null)
+        }
+
+        override fun addMore() {
+            lists.update { all ->
+                val current = all[key]?.takeIf { it.status == ListStatus.DONE } ?: return@update all
+                all + (key to current.grown())
             }
             focus.value = Focus(this, recipeId = null)
         }
@@ -279,9 +304,16 @@ class RecipeRepositoryImpl(
 
     private suspend fun writeList(listId: Long) {
         val list = lists.value.values.firstOrNull { it.id == listId } ?: return
+        val (earlier, received) = list.entries.partition { it.round < list.round }
         try {
-            generator.generate(list.ingredients, list.round, list.entries.map { it.listed }, list.attempt, list.written)
-                .collect { update -> updateList(listId) { it.after(update) } }
+            generator.generate(
+                ingredients = list.ingredients,
+                round = list.round,
+                earlier = earlier.map { it.listed },
+                received = received.map { it.listed },
+                firstAttempt = list.attempt,
+                written = list.written
+            ).collect { update -> updateList(listId) { it.after(update) } }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -324,7 +356,7 @@ class RecipeRepositoryImpl(
             written = maxOf(written, update.written),
             recipeProgress = update.recipe
         )
-        is ListUpdate.Written -> copy(entries = entries + Entry(id = entries.size, listed = update.recipe))
+        is ListUpdate.Written -> copy(entries = entries + Entry(id = entries.size, round = round, listed = update.recipe))
     }
 
     private fun Entry.after(update: DetailsUpdate): Entry = when (update) {
@@ -397,8 +429,8 @@ class RecipeRepositoryImpl(
         status = status,
         steps = steps,
         progress = progress,
-        expectedCount = RECIPES_PER_LIST,
-        nextRecipe = if (status == ListStatus.GENERATING) NextRecipe("$attempt-$written", recipeProgress) else null
+        expectedCount = entries.count { it.round < round } + RECIPES_PER_LIST,
+        nextRecipe = if (status == ListStatus.GENERATING) NextRecipe("$round-$attempt-$written", recipeProgress) else null
     )
 
     private companion object {

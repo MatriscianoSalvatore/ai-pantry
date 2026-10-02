@@ -113,17 +113,20 @@ internal object RecipeTitleRules {
     private const val POLENTA = "polenta"
     private const val RICE = "riso"
 
+    /** Pasta, by name or by shape. */
+    val pastaShapes = Regex(
+        """\bpasta\b|\bspaghett|\bpenne\b|\bfusill|\borecchiett|\blinguin|\btagliatell|\brigaton|\bgnocch|\blasagn|""" +
+            """\bmaccheron|\bpaccher|\bbucatin|\bfarfall|\btortellin|\bravioli|\bnoodle|\btrofie|\bconchigli|""" +
+            """\bmezze maniche|\bditalini"""
+    )
+
     private val baseFamilies = mapOf(
         POLENTA to Regex("""\bpolent"""),
         RICE to Regex("""\bris[oi]\b|\brisott|\brice\b"""),
         "farro" to Regex("""\bfarro|\bspelt"""),
         "orzo" to Regex("""\borzo\b|\bbarley"""),
         "cereali" to Regex("""\bcouscous|\bquinoa"""),
-        PASTA to Regex(
-            """\bpasta\b|\bspaghett|\bpenne\b|\bfusill|\borecchiett|\blinguin|\btagliatell|\brigaton|\bgnocch|\blasagn|""" +
-                """\bmaccheron|\bpaccher|\bbucatin|\bfarfall|\btortellin|\bravioli|\bnoodle|\btrofie|\bconchigli|""" +
-                """\bmezze maniche|\bditalini"""
-        )
+        PASTA to pastaShapes
     )
     private val basesWithoutLeaves = setOf(POLENTA, RICE, PASTA)
     private val basesWithoutEggs = setOf(POLENTA, RICE)

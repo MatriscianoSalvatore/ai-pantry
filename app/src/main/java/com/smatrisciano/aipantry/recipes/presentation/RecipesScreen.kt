@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -42,12 +43,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -55,6 +58,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -63,9 +67,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
@@ -177,7 +183,9 @@ private fun RecipesScreen(
                     state = state,
                     listState = listState,
                     padding = padding,
-                    onRecipeClick = { index -> onAction(Navigation.GoToDetail(index)) }
+                    onRecipeClick = { index -> onAction(Navigation.GoToDetail(index)) },
+                    // Same as the regenerate button: the outgoing button still takes taps while it fades
+                    onMoreRecipes = { if (!state.isGenerating) onAction(Interaction.OnMoreRecipesClick) }
                 )
             }
         }
@@ -506,15 +514,30 @@ private fun progressLabel(progress: GenerationProgress): String = when (progress
 /**
  * The recipes written so far and, while the model writes the others, a card for
  * the next one with the progress. New recipes slide into place as they arrive.
+ * Once the list is done, a button at the end asks for more, written below.
  */
 @Composable
 private fun RecipeList(
     state: RecipesState,
     listState: LazyListState,
     padding: PaddingValues,
-    onRecipeClick: (Int) -> Unit
+    onRecipeClick: (Int) -> Unit,
+    onMoreRecipes: () -> Unit
 ) {
     val played = rememberSaveable(state.listId, saver = PlayedEntrancesSaver) { mutableSetOf() }
+    // More recipes are written below the screen: after the tap the list follows them
+    // down, until they are all there or the user scrolls by hand
+    var following by remember(state.listId) { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { if (it is DragInteraction.Start) following = false }
+    }
+    // Every recipe that arrives, and the button back at the end
+    LaunchedEffect(state.recipes.size, state.isGenerating) {
+        if (!following) return@LaunchedEffect
+        // The last item: the card of the recipe on its way, or the button
+        listState.animateScrollToItem(state.recipes.size + 1)
+        if (!state.isGenerating) following = false
+    }
     // Only the top inset is applied to the list: it scrolls behind the
     // transparent navigation bar and its last card clears it via contentPadding
     LazyColumn(
@@ -548,19 +571,62 @@ private fun RecipeList(
                     .entrance(rememberEntrance("recipe-${item.id}", position = index + 1, played))
             )
         }
-        if (state.isGenerating) {
-            item(key = PENDING_KEY) {
+        // One of each for every round the list grows by, so each comes in with its entrance
+        val footerKey = if (state.isGenerating) "$PENDING_KEY-${state.expectedCount}" else "$MORE_KEY-${state.expectedCount}"
+        item(key = footerKey) {
+            val footerModifier = Modifier
+                .animateItem(fadeInSpec = null)
+                .entrance(rememberEntrance(footerKey, position = state.recipes.size + 1, played))
+            if (state.isGenerating) {
                 PendingRecipeCard(
                     number = (state.recipes.size + 1).coerceAtMost(state.expectedCount),
                     total = state.expectedCount,
                     next = state.nextRecipe,
                     toppingUp = state.isToppingUp,
-                    modifier = Modifier
-                        .animateItem(fadeInSpec = null)
-                        .entrance(rememberEntrance(PENDING_KEY, position = state.recipes.size + 1, played))
+                    modifier = footerModifier
+                )
+            } else {
+                MoreRecipesButton(
+                    onClick = {
+                        following = true
+                        onMoreRecipes()
+                    },
+                    modifier = footerModifier
                 )
             }
         }
+    }
+}
+
+/** At the end of a finished list: more recipes for the same ingredients, written below. */
+@Composable
+private fun MoreRecipesButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        shape = CircleShape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.AutoAwesome,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = stringResource(R.string.more_recipes),
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -894,6 +960,7 @@ private val PlayedEntrancesSaver = listSaver<MutableSet<String>, String>(
 
 private const val HEADER_KEY = "header"
 private const val PENDING_KEY = "pending"
+private const val MORE_KEY = "more"
 
 private const val PHASE_FADE_MILLIS = 250
 

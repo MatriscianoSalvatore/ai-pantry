@@ -49,6 +49,7 @@ class LlmRecipeGenerator(
     override fun generate(
         ingredients: List<Ingredient>,
         round: Int,
+        earlier: List<Recipe>,
         received: List<Recipe>,
         firstAttempt: Int,
         written: Int
@@ -60,20 +61,23 @@ class LlmRecipeGenerator(
         send(ListUpdate.Step(GenerationProgress.Generating(ingredients.size)))
         val language = AppLanguage.current()
         val prompt = buildListPrompt(ingredientsFor(promptOrder(ingredients).map { it.name }, round), language)
-        // Titles sent so far, the received ones included: an attempt that is resumed or
+        // The received recipes are among the dishes too: an attempt that is resumed or
         // repeated writes some of them again, and they mustn't show twice
-        val titles = received.mapTo(mutableSetOf()) { it.title.lowercase() }
+        val dishes = ListDishes(earlier, received)
+        // A new list makes do with fewer, so the first wait stays short. A list that grows
+        // gets all its new recipes: by then its dishes come back often, and are dropped
+        val enough = if (earlier.isEmpty()) MIN_SOUND_RECIPES else RECIPES_PER_LIST
         var lastError: Exception? = null
         for (attempt in firstAttempt until MAX_ATTEMPTS) {
             send(ListUpdate.Attempt(attempt))
             if (attempt > 0) send(ListUpdate.Step(GenerationProgress.Retrying))
             try {
                 val replay = if (attempt == firstAttempt) written else 0
-                writeList(model, prompt, seedFor(round, attempt), ingredients, language, titles, replay)
-                // Too few sound recipes (odd dishes dropped, or an answer that ignored the
-                // format): the next attempt adds to the ones already sent
-                if (titles.size >= MIN_SOUND_RECIPES) return@channelFlow
-                lastError = IllegalStateException("Only ${titles.size} sound recipes")
+                writeList(model, prompt, seedFor(round, attempt), ingredients, language, dishes, replay)
+                // Too few new sound recipes (odd dishes and repeats dropped, or an answer that
+                // ignored the format): the next attempt adds to the ones already sent
+                if (dishes.added >= enough) return@channelFlow
+                lastError = IllegalStateException("Only ${dishes.added} new sound recipes")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -83,7 +87,7 @@ class LlmRecipeGenerator(
             }
         }
         // Out of attempts: whatever was written stays, however short the list
-        if (titles.isEmpty()) throw lastError ?: IllegalStateException("No recipes")
+        if (dishes.added == 0) throw lastError ?: IllegalStateException("No recipes")
     }.flowOn(Dispatchers.Default)
 
     override fun generateDetails(recipe: Recipe, round: Int): Flow<DetailsUpdate> = channelFlow {
@@ -119,7 +123,7 @@ class LlmRecipeGenerator(
         seed: Int,
         ingredients: List<Ingredient>,
         language: AppLanguage,
-        titles: MutableSet<String>,
+        dishes: ListDishes,
         replay: Int
     ) {
         val objects = JsonObjectStream()
@@ -144,8 +148,8 @@ class LlmRecipeGenerator(
                 }
             }
             answer(model, prompt, seed)
-                // An attempt that only tops up the list is done as soon as the list is full
-                .takeWhile { titles.size < RECIPES_PER_LIST }
+                // An attempt that only tops up the round is done as soon as the round is full
+                .takeWhile { !dishes.isFull }
                 .collect { piece ->
                     if (output.isEmpty()) {
                         reading.cancel()
@@ -156,7 +160,7 @@ class LlmRecipeGenerator(
                     for (json in objects.append(piece)) {
                         written++
                         waitTimes.record(Measure.LIST_RECIPE_CHARS, json.length.toLong())
-                        RecipeJsonParser.parseRecipe(json)?.let { offer(it, ingredients, language, titles) }
+                        RecipeJsonParser.parseRecipe(json)?.let { offer(it, ingredients, language, dishes) }
                     }
                     val current = (objects.pendingLength.toFloat() / recipeChars).coerceAtMost(UNFINISHED_RECIPE_CAP)
                     report(
@@ -168,7 +172,7 @@ class LlmRecipeGenerator(
         }
         Log.d(TAG, "raw list output: $output")
         // Not a sequence of plain objects (escaped JSON, say): parsed as a whole at the end
-        if (written == 0) RecipeJsonParser.parse(output.toString()).forEach { offer(it, ingredients, language, titles) }
+        if (written == 0) RecipeJsonParser.parse(output.toString()).forEach { offer(it, ingredients, language, dishes) }
     }
 
     /** One attempt at the details: every complete part goes out as soon as it is written. */
@@ -221,22 +225,26 @@ class LlmRecipeGenerator(
     }
 
     /**
-     * Sends [recipe] unless it was sent already or (in Italian) it doesn't hold
-     * together, with its title tidied (see [RecipeTitleRules]) and what's missing
+     * Sends [recipe] unless the list already has that dish or (in Italian) it doesn't
+     * hold together, with its title tidied (see [RecipeTitleRules]) and what's missing
      * worked out.
      */
     private suspend fun ProducerScope<ListUpdate>.offer(
         recipe: Recipe,
         ingredients: List<Ingredient>,
         language: AppLanguage,
-        titles: MutableSet<String>
+        dishes: ListDishes
     ) {
         val tidy = if (language == AppLanguage.IT) recipe.copy(title = RecipeTitleRules.tidy(recipe.title)) else recipe
         if (language == AppLanguage.IT && RecipeTitleRules.isOddCombination(tidy.title)) {
             Log.d(TAG, "dropped odd recipe: ${tidy.title}")
             return
         }
-        if (titles.size >= RECIPES_PER_LIST || !titles.add(tidy.title.lowercase())) return
+        if (dishes.isFull) return
+        if (!dishes.add(tidy.title)) {
+            Log.d(TAG, "dropped repeated dish: ${tidy.title}")
+            return
+        }
         send(ListUpdate.Written(withMissingIngredients(tidy, ingredients)))
     }
 
@@ -317,10 +325,12 @@ class LlmRecipeGenerator(
     /**
      * A new seed alone isn't enough: at this temperature a 2B model keeps going back
      * to the same few dishes, and from the third list on it mostly repeats itself.
-     * What steers it is the ingredients it is given, so every list after the first
-     * gets a different, deterministic two thirds of the inventory (all of it when the
-     * inventory is small), in a different order. Naming the dishes already shown and
-     * asking to avoid them doesn't work: a 2B model copies them instead.
+     * What steers it is the ingredients it is given, so every round after the first
+     * (a new list, or more recipes for the same one) gets a different, deterministic
+     * two thirds of the inventory (all of it when the inventory is small), in a
+     * different order. Naming the dishes already shown and asking to avoid them
+     * doesn't work: a 2B model copies them instead. The ones that come back anyway
+     * are dropped (see [ListDishes]).
      */
     private fun ingredientsFor(names: List<String>, round: Int): List<String> {
         if (round == 0) return names
@@ -420,7 +430,7 @@ class LlmRecipeGenerator(
         const val TAG = "LlmRecipeGenerator"
         const val MAX_ATTEMPTS = 4
 
-        // A list with fewer dishes than this after dropping the odd ones gets another
+        // A new list with fewer dishes than this after dropping the odd ones gets another
         // attempt, which adds to it
         const val MIN_SOUND_RECIPES = 3
         const val GOLDEN_RATIO_32 = -0x61C88647 // 0x9E3779B9, spreads consecutive rounds apart
@@ -456,6 +466,30 @@ class LlmRecipeGenerator(
             "acqua", "sale", "pepe", "olio d'oliva", "olio",
             "zucchero", "farina", "pane", "burro", "aceto"
         )
+    }
+}
+
+/**
+ * The dishes of a list while a round writes it: those of the [earlier] rounds and
+ * those this round has already [received] keep out a dish that comes back, under
+ * the same name or another (see [SameDish]). The round is full at
+ * [RECIPES_PER_LIST] new recipes.
+ */
+private class ListDishes(earlier: List<Recipe>, received: List<Recipe>) {
+    private val titles = (earlier + received).mapTo(mutableListOf()) { it.title }
+
+    /** New recipes in this round. */
+    var added: Int = received.size
+        private set
+
+    val isFull: Boolean get() = added >= RECIPES_PER_LIST
+
+    /** Adds the dish called [title], unless the list already has it. */
+    fun add(title: String): Boolean {
+        if (titles.any { SameDish.matches(it, title) }) return false
+        titles += title
+        added++
+        return true
     }
 }
 

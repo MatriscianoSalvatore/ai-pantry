@@ -55,6 +55,7 @@
     <!-- Recipes -->
     <string name="what_can_i_cook">Cosa posso cucinare?</string>
     <string name="regenerate">Rigenera</string>
+    <string name="more_recipes">Altre ricette</string>
     <string name="recipe_generation_failed">Generazione delle ricette non riuscita</string>
     <string name="recipe_generation_failed_body">Il modello sul dispositivo non ha restituito ricette valide. Riprova.</string>
     <string name="progress_loading_model">Caricamento di %1$s sul dispositivo…</string>

@@ -23,9 +23,12 @@ The lesson: before asking how to make a model faster, ask whether it is the righ
 
 ## Demo flow
 
-1. **Scan** → photograph the fridge (*Fridge* chip), then "Scan another" for the pantry (*Pantry*). Instead of taking a picture you can pick a photo from the gallery. The results sheet shows which engine did the work; once dismissed, it reopens from the "N ingredients in this scan session" pill.
+1. **Scan** → photograph the fridge (*Fridge* chip), then "Scan another" for the pantry (*Pantry*). Instead of taking a picture you can pick a photo from the gallery. The results sheet shows which engine did the work; once dismissed, it reopens from the "N ingredients in this scan session" pill. While MobileCLIP works, the photo shows the zones it is looking at as a grid, one pass after the other (coarse, then fine).
 2. The detected ingredients land in the local inventory (Room). With MobileCLIP each one has a confidence and anything below 22% is discarded; Gemini Nano returns no confidence, so its results show a fixed default.
-3. **What can I cook?** → the LLM generates 4 recipes with time, difficulty and used ingredients; the missing ingredients are rechecked by the app against the inventory (the model alone is unreliable at this) and the recipes with more missing ingredients go last. Opening a recipe generates its step-by-step instructions and variations on demand.
+3. **What can I cook?** → Gemma writes 4 recipes with time, difficulty and used ingredients, each one on screen as soon as it is written. The first list for the current inventory is written ahead in the background while the app is open, so it is often ready, or nearly, when you ask for it. The missing ingredients are rechecked by the app against the inventory (the model alone is unreliable at this) and the recipes with more missing ingredients go last. Opening a recipe generates its step-by-step instructions and variations on demand, again shown part by part as they are written.
+4. **More recipes**, at the end of the list, adds 4 new ones below; **Regenerate** (top right) replaces the list. Every new round uses a different two thirds of the inventory, and the dishes the list already has are dropped, even under another name. While the app runs, lists are kept per ingredient set: change the inventory and you get a new list, put it back and the old one returns.
+
+A hidden diagnostics page (tap the logo on the home screen 6 times) shows the thermal status and headroom, CPU frequencies and throttling, battery, memory, the model state and the recipe lists kept in memory, which it can clear.
 
 The app follows the device language: **Italian if the phone is set to Italian, English otherwise**. That covers the UI (`res/values-it`), the detection and recipe prompts, and the names of the ingredients recognised by MobileCLIP, so the recipes come out in the same language. The JSON keys in the prompts stay in English: they are the parser's contract.
 
@@ -50,7 +53,8 @@ Every feature follows Clean Architecture + MVI (`data / domain / presentation`),
 
 - `capture/` — CameraX + photo picker; `AdaptiveIngredientDetector` (runtime selection), `NanoIngredientDetector` (ML Kit GenAI Prompt API), `ClipZeroShotIngredientDetector` (LiteRT), `LlmVisionIngredientDetector` (detection via Gemma vision: present in the code as a third route, off the default path — minutes per scan when it ends up on CPU)
 - `inventory/` — Room, ingredient inventory, model status banner on home, keyword emoji resolver
-- `recipes/` — `LlmRecipeGenerator` (two-stage generation + retries), tolerant `RecipeJsonParser`
+- `recipes/` — `RecipeRepositoryImpl` (lists per ingredient set, one generation at a time with what is on screen first, work ahead in the background, resume after an interruption), `LlmRecipeGenerator` (two-stage streaming generation + retries), `RecipeTitleRules` (Italian titles tidied, odd combinations dropped), `SameDish` (repeated dishes), tolerant `RecipeJsonParser`
+- `diagnostics/` — the hidden page: heat and throttling, battery, memory, model, recipe cache
 - `core/data/ai/` — `LlmCatalog`, `ModelSource` (AiPacks | BundledAssets), `ModelRepository` (automatic provisioning), `LlmEngineHolder` (engine cache + GPU/CPU policy)
 - `core/domain/` — `AppLanguage` (Italian or English, from the device locale), read by prompts and detectors
 
@@ -60,7 +64,7 @@ Every feature follows Clean Architecture + MVI (`data / domain / presentation`),
 
 **Gemini Nano** (devices supported by the ML Kit GenAI Prompt API: Pixel 9/10/11 series except the "a" models, Galaxy S26 and a few dozen other recent flagships; the Galaxy S25 has Nano only for the ready-made GenAI APIs, not for the Prompt API) — multimodal photo+text prompt via the ML Kit GenAI Prompt API (`com.google.mlkit:genai-prompt`, still in beta). Availability is a runtime question: `checkStatus()` on every use; if the model is downloadable the download starts in the background and the fallback is used meanwhile. Even when the status is `AVAILABLE`, AICore can refuse a request (per-app quota, inference allowed only for the app in the foreground), and Nano is not supported on devices with an unlocked bootloader nor on the emulator: any Nano exception falls back to CLIP silently.
 
-**MobileCLIP-S2 zero-shot** (everywhere, Android 12+, the default included) — the image encoder (~140 MB, LiteRT) embeds multi-scale crops of the photo (a grid at 50% and 33% of the short side, pool of interpreters running in parallel) and compares them by cosine similarity against the text embeddings of **864 ingredients + 12 "distractor" labels** precomputed offline. The "classifier" is a text file:
+**MobileCLIP-S2 zero-shot** (everywhere, Android 12+, the default included) — the image encoder (~140 MB, LiteRT) embeds multi-scale crops of the photo (a grid at 50% and 33% of the short side, pool of interpreters running in parallel) and compares them by cosine similarity against the text embeddings of **863 ingredients + 12 "distractor" labels** precomputed offline. The "classifier" is a text file:
 
 - `scripts/ingredient_labels.txt` — one label per line; `label|display` syntax for aliases ("lactose-free milk|milk"), a `~` prefix for distractors (they absorb the food-free crops, and foods that aren't recipe ingredients like snacks, and are never reported)
 - `scripts/ingredient_names_it.txt` — the Italian name of every display name (`english|italiano`), shown on devices set to Italian. Matching stays on the English labels, since the text encoder was trained on English captions; the script stops if a translation is missing
@@ -93,9 +97,9 @@ Licenses: Gemma 4 is released under **Apache 2.0**, so redistributing it (via Pl
 
 ### GPU/CPU backend and resilience
 
-The LiteRT-LM runtime is **GPU-first**. A broken GPU shows up in two ways: a **hang** (a native call that cannot be interrupted) or an **immediate exception** on the first inference (e.g. no OpenCL, where engine init succeeds anyway). `LlmEngineHolder` catches both — a watchdog with a timeout on a detached job for the hangs, an exception catch for the rest — and marks the GPU broken **persistently** for that model: subsequent launches go straight to CPU (up to 4 threads, to limit heat and throttling) without paying for the attempt again. A micro-inference probe at warm-up triggers the fallback at startup already, so the user's first generation does not pay the wait.
+The LiteRT-LM runtime is **GPU-first**. A broken GPU shows up in two ways: a **hang** (a native call that cannot be interrupted) or an **immediate exception** on the first inference (e.g. no OpenCL, where engine init succeeds anyway). `LlmEngineHolder` catches both — a watchdog with a timeout on a detached job for the hangs, an exception catch for the rest — and marks the GPU broken **persistently** for that model: subsequent launches go straight to CPU (up to 4 threads, to limit heat and throttling) without paying for the attempt again. A micro-inference probe at warm-up triggers the fallback at startup already, so the user's first generation does not pay the wait. The XNNPack caches LiteRT-LM writes next to the model (the weights already laid out for the CPU) are kept across launches: on a Pixel 7 the engine is ready in under 2 seconds instead of ~13.
 
-Recipe generation retries automatically (up to 4 attempts in total) before surfacing an error, because small models occasionally emit malformed JSON (meanwhile the UI only shows an "Output not parseable, retrying…" progress line); `RecipeJsonParser` and `DetectionJsonParser` are tolerant by construction.
+Recipe generation retries automatically (up to 4 attempts in total) before surfacing an error: small models occasionally emit malformed JSON, and a list left short after dropping odd or repeated dishes gets another attempt that adds to it (meanwhile the UI shows "Output not parseable, retrying…" or "Looking for a few more ideas…"); `RecipeJsonParser` and `DetectionJsonParser` are tolerant by construction.
 
 ## Getting started
 

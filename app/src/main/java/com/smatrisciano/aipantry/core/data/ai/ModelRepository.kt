@@ -39,7 +39,8 @@ class ModelRepository(
     private val context: Context,
     private val aiPackManager: AiPackManager,
     private val appScope: CoroutineScope,
-    private val engineHolder: LlmEngineHolder
+    private val engineHolder: LlmEngineHolder,
+    private val nano: GeminiNanoWriter
 ) {
 
     private val _statuses = MutableStateFlow<Map<String, ModelStatus>>(emptyMap())
@@ -278,13 +279,18 @@ class ModelRepository(
 
     /**
      * Preloads the LiteRT engine in the background as soon as the model is ready:
-     * the first scan/generation doesn't pay the ~30-60 s of loading.
+     * the first scan/generation doesn't pay the ~30-60 s of loading. Not where Gemini
+     * Nano 4 writes the recipes: Gemma would only take memory, and loads if Nano fails.
      */
     private val warmedUp = mutableSetOf<String>()
 
     private fun warmUpEngine(model: LlmModel) {
         if (!warmedUp.add(model.id)) return
         appScope.launch(Dispatchers.Default) {
+            if (nano.isUsable()) {
+                engineHolder.skipWarmUp()
+                return@launch
+            }
             runCatching { engineHolder.warmUp(model, modelFile(model)) }
                 .onFailure {
                     Log.w(TAG, "Engine warm-up failed", it)

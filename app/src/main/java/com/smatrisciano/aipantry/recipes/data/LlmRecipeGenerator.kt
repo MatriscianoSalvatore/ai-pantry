@@ -4,9 +4,11 @@ import android.os.SystemClock
 import android.util.Log
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Measure
+import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.LlmModel
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
+import com.smatrisciano.aipantry.core.data.ai.NanoFailureException
 import com.smatrisciano.aipantry.core.domain.AppLanguage
 import com.smatrisciano.aipantry.inventory.domain.models.Ingredient
 import com.smatrisciano.aipantry.inventory.domain.models.IngredientSource
@@ -32,19 +34,25 @@ import kotlin.math.exp
 import kotlin.math.ln
 
 /**
- * On-device recipe generation with the active model (Gemma 4 E2B) via LiteRT-LM.
- * Two stages to minimise generated tokens: a light list first, instructions only
- * for the recipe the user opens. Both stream: every recipe of the list, and every
- * part of the instructions, goes out as soon as the model has written it.
+ * On-device recipe generation: Gemini Nano 4 where the phone has it (see
+ * [GeminiNanoWriter]), otherwise the active model (Gemma 4 E2B) via LiteRT-LM, with the
+ * same prompts either way. Two stages to minimise generated tokens: a light list first,
+ * instructions only for the recipe the user opens. Both stream: every recipe of the
+ * list, and every part of the instructions, goes out as soon as the model has written it.
  */
 class LlmRecipeGenerator(
     private val modelRepository: ModelRepository,
     private val engineHolder: LlmEngineHolder,
+    private val nano: GeminiNanoWriter,
     private val waitTimes: WaitTimeEstimator
 ) : RecipeGenerator {
 
     override val engineName: String
-        get() = "${modelRepository.activeModel().displayName} · LiteRT"
+        get() = if (nano.available.value) GeminiNanoWriter.ENGINE_NAME else "${modelRepository.activeModel().displayName} · LiteRT"
+
+    // Whether Nano is writing the answer under way, for what a failure means (see onFailedAttempt)
+    @Volatile
+    private var answeredByNano = false
 
     override fun generate(
         ingredients: List<Ingredient>,
@@ -54,9 +62,10 @@ class LlmRecipeGenerator(
         firstAttempt: Int,
         written: Int
     ): Flow<ListUpdate> = channelFlow {
-        val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
-        send(ListUpdate.Step(GenerationProgress.LoadingModel(model.displayName)))
-        engineHolder.acquire(model, modelRepository.modelFile(model))
+        // Nano 4 is ready in AICore already; Gemma loads into the app if it isn't there yet
+        val gemmaModel = if (nano.isUsable()) null else gemma()
+        send(ListUpdate.Step(GenerationProgress.LoadingModel(gemmaModel?.displayName ?: GeminiNanoWriter.DISPLAY_NAME)))
+        gemmaModel?.let { engineHolder.acquire(it, modelRepository.modelFile(it)) }
 
         send(ListUpdate.Step(GenerationProgress.Generating(ingredients.size)))
         val language = AppLanguage.current()
@@ -73,7 +82,7 @@ class LlmRecipeGenerator(
             if (attempt > 0) send(ListUpdate.Step(GenerationProgress.Retrying))
             try {
                 val replay = if (attempt == firstAttempt) written else 0
-                writeList(model, prompt, seedFor(round, attempt), ingredients, language, dishes, replay)
+                writeList(prompt, seedFor(round, attempt), ingredients, language, dishes, replay)
                 // Too few new sound recipes (odd dishes and repeats dropped, or an answer that
                 // ignored the format): the next attempt adds to the ones already sent
                 if (dishes.added >= enough) return@channelFlow
@@ -82,7 +91,7 @@ class LlmRecipeGenerator(
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "LLM attempt ${attempt + 1}/$MAX_ATTEMPTS failed", e)
-                onFailedAttempt(model, e)
+                onFailedAttempt(e)
                 lastError = e
             }
         }
@@ -91,21 +100,20 @@ class LlmRecipeGenerator(
     }.flowOn(Dispatchers.Default)
 
     override fun generateDetails(recipe: Recipe, round: Int): Flow<DetailsUpdate> = channelFlow {
-        val model = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
-        engineHolder.acquire(model, modelRepository.modelFile(model))
+        if (!nano.isUsable()) gemma().let { engineHolder.acquire(it, modelRepository.modelFile(it)) }
         val prompt = buildDetailsPrompt(recipe, AppLanguage.current())
         var lastError: Exception? = null
         for (attempt in 0 until MAX_ATTEMPTS) {
             if (attempt > 0) send(DetailsUpdate.Retrying)
             try {
-                val details = writeDetails(model, prompt, seedFor(round, attempt), recipe)
+                val details = writeDetails(prompt, seedFor(round, attempt), recipe)
                 send(DetailsUpdate.Written(details, writing = null))
                 return@channelFlow
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "LLM attempt ${attempt + 1}/$MAX_ATTEMPTS failed", e)
-                onFailedAttempt(model, e)
+                onFailedAttempt(e)
                 lastError = e
             }
         }
@@ -118,7 +126,6 @@ class LlmRecipeGenerator(
      * same seed writes them again, and meanwhile there is no new recipe to follow.
      */
     private suspend fun ProducerScope<ListUpdate>.writeList(
-        model: LlmModel,
         prompt: String,
         seed: Int,
         ingredients: List<Ingredient>,
@@ -147,7 +154,7 @@ class LlmRecipeGenerator(
                     delay(PROGRESS_TICK_MILLIS)
                 }
             }
-            answer(model, prompt, seed)
+            answer(prompt, seed)
                 // An attempt that only tops up the round is done as soon as the round is full
                 .takeWhile { !dishes.isFull }
                 .collect { piece ->
@@ -177,7 +184,6 @@ class LlmRecipeGenerator(
 
     /** One attempt at the details: every complete part goes out as soon as it is written. */
     private suspend fun ProducerScope<DetailsUpdate>.writeDetails(
-        model: LlmModel,
         prompt: String,
         seed: Int,
         recipe: Recipe
@@ -203,7 +209,7 @@ class LlmRecipeGenerator(
                     delay(PROGRESS_TICK_MILLIS)
                 }
             }
-            answer(model, prompt, seed).collect { piece ->
+            answer(prompt, seed).collect { piece ->
                 if (output.isEmpty()) {
                     reading.cancel()
                     waitTimes.record(Measure.PROMPT_READING_MILLIS, progress.elapsedMillis)
@@ -266,12 +272,18 @@ class LlmRecipeGenerator(
     }
 
     /**
-     * The model's answer, a piece at a time. On GPU a watchdog catches a hung driver
-     * (no new text for [GPU_STALL_TIMEOUT_MS]) and any failure of the engine is the
-     * GPU's: see [onFailedAttempt]. The CPU never hangs, it's just slow, so there an
-     * answer takes as long as it needs.
+     * The model's answer, a piece at a time: Gemini Nano 4's where the phone has it,
+     * otherwise Gemma's, with the same sampling. For Gemma, on GPU a watchdog catches a
+     * hung driver (no new text for [GPU_STALL_TIMEOUT_MS]) and any failure of the engine
+     * is the GPU's: see [onFailedAttempt]. The CPU never hangs, it's just slow, so there
+     * an answer takes as long as it needs.
      */
-    private fun answer(model: LlmModel, prompt: String, seed: Int): Flow<String> {
+    private suspend fun answer(prompt: String, seed: Int): Flow<String> {
+        answeredByNano = nano.isUsable()
+        if (answeredByNano) return nano.answer(prompt, temperature = 0.5f, topK = 40, seed = seed)
+        // Loaded already, unless Nano was writing until it failed
+        val model = gemma()
+        engineHolder.acquire(model, modelRepository.modelFile(model))
         val gpu = engineHolder.currentBackendIsGpu()
         return engineHolder.streamAnswer(
             model = model,
@@ -295,14 +307,22 @@ class LlmRecipeGenerator(
     }
 
     /**
-     * A failing or hung GPU, or garbage tokens in the answer, mean the GPU backend is
-     * broken on this device: it is marked unusable and the next attempt runs on CPU.
+     * Nano failing, or writing garbage tokens, hands the recipes to Gemma for the rest
+     * of the session. With Gemma, a failing or hung GPU, or garbage tokens in the answer,
+     * mean the GPU backend is broken on this device: it is marked unusable and the next
+     * attempt runs on CPU.
      */
-    private fun onFailedAttempt(model: LlmModel, error: Exception) {
-        if (error is GpuFailureException || error is CorruptedOutputException) {
-            engineHolder.reportGpuUnusable(model)
+    private fun onFailedAttempt(error: Exception) {
+        when {
+            error is NanoFailureException || (answeredByNano && error is CorruptedOutputException) ->
+                nano.reportFailure()
+            error is GpuFailureException || error is CorruptedOutputException ->
+                engineHolder.reportGpuUnusable(modelRepository.activeModel())
         }
     }
+
+    /** The Gemma model, ready on the device. */
+    private fun gemma(): LlmModel = requireNotNull(modelRepository.readyActiveModel()) { "No LLM model available" }
 
     private class GpuFailureException(cause: Throwable) : Exception("Generation failed on GPU", cause)
 

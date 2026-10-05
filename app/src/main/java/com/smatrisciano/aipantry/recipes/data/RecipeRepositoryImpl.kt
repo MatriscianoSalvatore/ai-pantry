@@ -3,6 +3,7 @@ package com.smatrisciano.aipantry.recipes.data
 import android.os.SystemClock
 import android.util.Log
 import com.smatrisciano.aipantry.core.data.ai.BackgroundAiWork
+import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
@@ -35,7 +36,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -59,6 +59,7 @@ class RecipeRepositoryImpl(
     inventoryRepository: InventoryRepository,
     modelRepository: ModelRepository,
     engineHolder: LlmEngineHolder,
+    nano: GeminiNanoWriter,
     backgroundAiWork: BackgroundAiWork,
     appScope: CoroutineScope
 ) : RecipeRepository {
@@ -194,11 +195,16 @@ class RecipeRepositoryImpl(
                 }
         }
 
-        val modelReady = modelRepository.statuses
-            .map { it[modelRepository.activeModel().id] == ModelStatus.Ready }
-            .distinctUntilChanged()
-        // Work ahead also waits for the startup warm-up, which may still be probing the GPU
-        val aheadAllowed = combine(backgroundAiWork.isAllowed, engineHolder.isWarm) { allowed, warm -> allowed && warm }
+        // Something to write with: Gemini Nano 4, or Gemma on the device
+        val modelReady = combine(modelRepository.statuses, nano.available) { statuses, nanoWrites ->
+            nanoWrites || statuses[modelRepository.activeModel().id] == ModelStatus.Ready
+        }.distinctUntilChanged()
+        // Work ahead also waits for Gemma's startup warm-up, which may still be probing the GPU
+        val aheadAllowed = combine(backgroundAiWork.isAllowed, engineHolder.isWarm, nano.available) { allowed, warm, nanoWrites ->
+            allowed && (warm || nanoWrites)
+        }
+        // Whether the phone has Gemini Nano 4, before the first recipe asks
+        appScope.launch { nano.isUsable() }
         appScope.launch {
             combine(lists, focus, inventoryKey, aheadAllowed, modelReady) { lists, focus, inventoryKey, ahead, ready ->
                 if (ready) nextWork(lists, focus, inventoryKey, ahead) else null

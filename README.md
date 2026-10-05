@@ -4,9 +4,9 @@
 
 Android demo app from the talk *AI On-Device*: a **fully on-device** AI pipeline. Photograph your fridge and pantry, the app recognises the ingredients and generates recipes that use only what you have. Three AI engines cooperate, each on the job it was built for:
 
-- **Gemini Nano** (AICore, via ML Kit GenAI) — ingredient detection on the devices that support it: zero MB in the APK
+- **Gemini Nano** (AICore, via ML Kit GenAI) — ingredient detection on the devices that support it and, where it is Gemini Nano 4 (the production Gemma 4), the recipes too: zero MB in the APK
 - **MobileCLIP-S2** (LiteRT) — zero-shot detection on *any* Android 12+ device: the everywhere-fallback and the default engine
-- **Gemma 4 E2B** (LiteRT-LM) — recipe generation: the only genuinely generative task
+- **Gemma 4 E2B** (LiteRT-LM) — recipe generation on every other phone: the only genuinely generative task
 
 **Inference is 100% on-device: photos and prompts never leave the device.** The app's own code makes no network calls; the `INTERNET` permission you will find in the merged manifest is added by ML Kit's telemetry library (`com.google.android.datatransport`), which sends usage metrics, not photos or prompts (if you publish on Play, declare it in the Data safety form). Models arrive through the install channel: Google Play (AI packs) or embedded in the APK, in the beta debug build.
 
@@ -42,8 +42,10 @@ CameraX / Photo picker → Image capture
         │       ├─ Gemini Nano (AICore · ML Kit GenAI) if checkStatus() == AVAILABLE
         │       └─ MobileCLIP-S2 zero-shot (LiteRT) everywhere — and safety net if Nano fails
         → Room Database
-        → Recipe generation ──── Gemma 4 E2B text-only (LiteRT-LM)
-        │                        stage 1: recipe list · stage 2: on-demand instructions
+        → Recipe generation ──── LlmRecipeGenerator
+        │       ├─ Gemini Nano 4 (AICore · ML Kit GenAI) if the base model is nano-v4 or later
+        │       └─ Gemma 4 E2B text-only (LiteRT-LM) everywhere else — and safety net if Nano fails
+        │       stage 1: recipe list · stage 2: on-demand instructions
         → Jetpack Compose UI
 
 play flavor:  Google Play ──(AI pack ×3, fast-follow)──▶ ModelRepository ──assemble──▶ .litertlm
@@ -55,9 +57,9 @@ Every feature follows Clean Architecture + MVI (`data / domain / presentation`),
 
 - `capture/` — CameraX + photo picker; `AdaptiveIngredientDetector` (runtime selection), `NanoIngredientDetector` (ML Kit GenAI Prompt API), `ClipZeroShotIngredientDetector` (LiteRT), `LlmVisionIngredientDetector` (detection via Gemma vision: present in the code as a third route, off the default path — minutes per scan when it ends up on CPU)
 - `inventory/` — Room, ingredient inventory, model status banner on home, keyword emoji resolver
-- `recipes/` — `RecipeRepositoryImpl` (lists per ingredient set, one generation at a time with what is on screen first, work ahead in the background, resume after an interruption), `LlmRecipeGenerator` (two-stage streaming generation + retries), `RecipeTitleRules` (Italian titles tidied, odd combinations dropped), `SameDish` (repeated dishes), tolerant `RecipeJsonParser`
+- `recipes/` — `RecipeRepositoryImpl` (lists per ingredient set, one generation at a time with what is on screen first, work ahead in the background, resume after an interruption), `LlmRecipeGenerator` (two-stage streaming generation + retries, on Gemini Nano 4 or Gemma), `RecipeTitleRules` (Italian titles tidied, odd combinations dropped), `SameDish` (repeated dishes), tolerant `RecipeJsonParser`
 - `diagnostics/` — the hidden page: heat and throttling, battery, memory, model, recipe cache
-- `core/data/ai/` — `LlmCatalog`, `ModelSource` (AiPacks | BundledAssets), `ModelRepository` (automatic provisioning), `LlmEngineHolder` (engine cache + GPU/CPU policy)
+- `core/data/ai/` — `LlmCatalog`, `ModelSource` (AiPacks | BundledAssets), `ModelRepository` (automatic provisioning), `LlmEngineHolder` (engine cache + GPU/CPU policy), `GeminiNanoWriter` (Gemini Nano 4 for the recipes, where the phone has it)
 - `core/domain/` — `AppLanguage` (Italian or English, from the device locale), read by prompts and detectors
 
 ## Ingredient recognition
@@ -75,6 +77,8 @@ Every feature follows Clean Architecture + MVI (`data / domain / presentation`),
 Adding an ingredient = adding a line (and its Italian name) and re-running the script. Confidence threshold 22%, max 15 results per scan. CLIP classifies but does not count, so no quantity is shown in the app: the field survives in the data model (Nano does fill it in) but a placeholder count is worse than none. The vocabulary is closed: CLIP only recognises what is listed in the file.
 
 ## The LLM: Gemma 4 E2B on LiteRT-LM, two delivery channels
+
+On phones with Gemini Nano 4, the production version of Gemma 4 in AICore, the recipes are written by Nano 4 instead, with the same prompts, on the phone's AI accelerator: Gemma isn't loaded at startup there, and takes over if Nano fails (a quota, an AICore error). An earlier Nano (nano-v3, of the Gemma 3n generation) stays with the ingredients.
 
 **Gemma 4 E2B, multimodal** (`.litertlm` format, ~2.6 GB — mixed 2/4/8-bit quantisation) for every flavor — never an in-app HTTP download:
 
@@ -131,7 +135,7 @@ Recipe generation retries automatically (up to 4 attempts in total) before surfa
      ```bash
      adb push ~/Downloads/gemma-4-E2B-it.litertlm /data/local/tmp/llm/gemma4-e2b-it.litertlm
      ```
-4. Without Gemma the app still scans and builds the inventory (MobileCLIP, or Nano where available); only the recipes need the LLM. Without the MobileCLIP encoder, scanning works only on devices with Gemini Nano.
+4. Without Gemma the app still scans and builds the inventory (MobileCLIP, or Nano where available); only the recipes need the LLM, unless the phone has Gemini Nano 4. Without the MobileCLIP encoder, scanning works only on devices with Gemini Nano.
 
 ## Build & distribution
 

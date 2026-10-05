@@ -194,6 +194,11 @@ class LlmEngineHolder(private val context: Context) {
         }
     }
 
+    /** No warm-up: Gemini Nano writes the recipes, and the engine loads only if Nano fails. */
+    fun skipWarmUp() {
+        _isWarm.value = true
+    }
+
     private val _isWarm = MutableStateFlow(false)
 
     /**

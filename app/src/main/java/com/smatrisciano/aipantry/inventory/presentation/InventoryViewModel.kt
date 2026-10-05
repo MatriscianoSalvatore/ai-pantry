@@ -2,6 +2,7 @@ package com.smatrisciano.aipantry.inventory.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
 import com.smatrisciano.aipantry.core.data.ai.LlmCatalog
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
@@ -15,26 +16,29 @@ import kotlinx.coroutines.launch
 
 class InventoryViewModel(
     private val inventoryRepository: InventoryRepository,
-    modelRepository: ModelRepository
+    modelRepository: ModelRepository,
+    nano: GeminiNanoWriter
 ) : ViewModel() {
 
     val uiState = combine(
         inventoryRepository.observeInventory(),
-        modelRepository.statuses
-    ) { ingredients, statuses ->
+        modelRepository.statuses,
+        nano.available
+    ) { ingredients, statuses, nanoWrites ->
         val activeModel = LlmCatalog.default
         val status = statuses[activeModel.id]
         InventoryState(
             isLoaded = true,
             fridgeItems = ingredients.filter { it.source == IngredientSource.FRIDGE },
             pantryItems = ingredients.filter { it.source != IngredientSource.FRIDGE },
-            aiStatus = when (status) {
+            // Where Gemini Nano 4 writes the recipes, Gemma's state doesn't hold them up
+            aiStatus = if (nanoWrites) AiStatus.READY else when (status) {
                 ModelStatus.Ready -> AiStatus.READY
                 is ModelStatus.Downloading -> AiStatus.DOWNLOADING
                 is ModelStatus.Failed -> AiStatus.FAILED
                 else -> AiStatus.PREPARING
             },
-            modelName = activeModel.displayName
+            modelName = if (nanoWrites) GeminiNanoWriter.DISPLAY_NAME else activeModel.displayName
         )
     }.stateIn(
         scope = viewModelScope,

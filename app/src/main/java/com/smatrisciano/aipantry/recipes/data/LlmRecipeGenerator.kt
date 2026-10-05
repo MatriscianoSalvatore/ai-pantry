@@ -185,7 +185,8 @@ class LlmRecipeGenerator(
         val output = StringBuilder()
         val expectedChars = waitTimes.expected(Measure.DETAILS_CHARS)
         var parsedUpTo = -1
-        var writing = DetailsPart.INTRO
+        // var writing = DetailsPart.INTRO
+        var writing = DetailsPart.INGREDIENTS
         val progress = AnswerProgress(DETAILS_READING_SHARE, waitTimes.expected(Measure.PROMPT_READING_MILLIS))
         // Only changes that show: a whole percent
         var lastPercent = -1
@@ -348,8 +349,12 @@ class LlmRecipeGenerator(
         return h xor (h ushr 16)
     }
 
-    // Starts at 1: for the runtime, seed 0 and seed 1 give the same output
-    private fun seedFor(round: Int, attempt: Int): Int = 1 + round * MAX_ATTEMPTS + attempt
+    // Any start is as good as another, but not 0 (for the runtime, seed 0 and seed 1 give
+    // the same output). From 10 the demo kitchen, the fridge and pantry of the demo photos,
+    // first gets pasta al pomodoro, risotto ai funghi, insalata mista con tonno e capperi
+    // and melanzane alla parmigiana: with LiteRT-LM 0.17.1 and the list prompt as it is,
+    // as another runtime or prompt draws other dishes from a seed
+    private fun seedFor(round: Int, attempt: Int): Int = 10 + round * MAX_ATTEMPTS + attempt
 
     // JSON keys and difficulty values stay in English in both languages: they
     // are the contract with the parser, only the contents are translated
@@ -367,10 +372,12 @@ class LlmRecipeGenerator(
             // ("Risotto ai funghi e riso" half of the time). Pushing for more creativity
             // ("piatti non banali", "almeno uno al forno") or adding more title rules
             // changes the dishes for the worse: the remaining slips are fixed in code
-            // (RecipeTitleRules)
+            // (RecipeTitleRules). So does asking for the array on one line: 40% fewer
+            // tokens, but dishes like "Risotto ai ferri". Contorni aren't asked for: with
+            // them, one of the four is an insalata mista nearly every time
             AppLanguage.IT -> """
                 Ingredienti: $names.
-                Proponi 4 ricette diverse tra loro (primi, secondi, contorni).
+                Proponi 4 ricette diverse tra loro (primi, secondi).
                 Il titolo è il nome del piatto come in un ricettario, con la sola iniziale maiuscola: non elencare ingredienti che il nome già implica (come il riso in un risotto).
                 Rispondi SOLO con un array JSON, ogni ricetta esattamente:
                 {"title":string,"prepTimeMinutes":int,"difficulty":"EASY"|"MEDIUM"|"HARD","usedIngredients":[nomi]}
@@ -382,26 +389,33 @@ class LlmRecipeGenerator(
     private fun buildDetailsPrompt(recipe: Recipe, language: AppLanguage): String {
         val names = (recipe.usedIngredients + recipe.missingIngredients).joinToString { it.name }
         // Field descriptions, not example values (a small model would copy them
-        // verbatim). Metric only. Short but with a clear schema.
+        // verbatim). Metric only. Short but with a clear schema. The amounts go by the
+        // names as written, so the model doesn't spend tokens renaming the ingredients
+        // ("Pomodori (datterini o pelati)") or adding others. The layout is left to the
+        // model: asked for the JSON on one line, a 2B model often runs the steps into
+        // a single one or leaves the object unfinished.
+        // Not in the object, to save its tokens:
+        //   "whySuitable": string (one short sentence why it fits),
+        //   "whySuitable": string (una frase breve sul perché è adatta),
         return when (language) {
             AppLanguage.EN -> """
                 Recipe: "${recipe.title}". Ingredients: $names.
                 Give real metric amounts (g/ml, never tbsp/cups) and real cooking steps.
-                Respond with ONLY a JSON object (no markdown):
+                Respond with ONLY a JSON object (no markdown).
+                In "amounts" the amount, with its unit, of each ingredient listed, with its name written exactly as above:
                 {
-                  "whySuitable": string (one short sentence why it fits),
-                  "ingredients": [{"name": string, "amount": string in g or ml}],
+                  "amounts": {name: string},
                   "steps": [string] (4 to 8 real cooking steps),
                   "variants": [string] (up to 3 variations)
                 }
             """
             AppLanguage.IT -> """
                 Ricetta: "${recipe.title}". Ingredienti: $names.
-                Indica quantità reali in unità metriche (g/ml, mai cucchiai o tazze) e veri passaggi di cottura.
-                Rispondi SOLO con un oggetto JSON (niente markdown), con i testi in italiano:
+                Indica quantità reali in unità metriche (g/ml) e veri passaggi di cottura.
+                Rispondi SOLO con un oggetto JSON (niente markdown), con i testi in italiano.
+                In "amounts" la quantità con l'unità di misura di ciascuno degli ingredienti elencati, con il nome scritto esattamente come sopra:
                 {
-                  "whySuitable": string (una frase breve sul perché è adatta),
-                  "ingredients": [{"name": string, "amount": string in g o ml}],
+                  "amounts": {nome: string},
                   "steps": [string] (da 4 a 8 veri passaggi di cottura),
                   "variants": [string] (fino a 3 varianti)
                 }
@@ -457,14 +471,18 @@ class LlmRecipeGenerator(
 
         val garbageMarkers = listOf("<unused", "<pad>", "<unk>")
 
-        // Basic pantry always available (as per the prompt): never "to buy".
+        // Basic pantry always available (as per the prompt): never "to buy". Nor are
+        // onions, shallots, garlic, the usual herbs and broth (a stock cube will do),
+        // which any kitchen has.
         // Both languages together: the inventory can mix them if the user changed
         // language between one scan and the next
         val PANTRY_STAPLES = setOf(
             "water", "salt", "pepper", "olive oil", "oil",
             "sugar", "flour", "bread", "butter", "vinegar",
+            "onion", "onions", "shallot", "shallots", "garlic", "basil", "parsley", "broth", "stock",
             "acqua", "sale", "pepe", "olio d'oliva", "olio",
-            "zucchero", "farina", "pane", "burro", "aceto"
+            "zucchero", "farina", "pane", "burro", "aceto",
+            "cipolla", "cipolle", "scalogno", "scalogni", "aglio", "basilico", "prezzemolo", "brodo", "dado"
         )
     }
 }

@@ -761,10 +761,10 @@ private fun RecipeCard(
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        // The card grows when the details arrive with the "why it fits" line
+        // // The card grows when the details arrive with the "why it fits" line
         Column(
             modifier = Modifier
-                .animateContentSize()
+                // .animateContentSize()
                 .padding(16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -787,19 +787,19 @@ private fun RecipeCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            // whySuitable comes with the details, written when the recipe is opened (or
-            // ahead of time for the one most likely to be): until then the ingredient
-            // strip below already says what's used
-            if (recipe.whySuitable.isNotBlank()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = recipe.whySuitable,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            // // whySuitable comes with the details, written when the recipe is opened (or
+            // // ahead of time for the one most likely to be): until then the ingredient
+            // // strip below already says what's used
+            // if (recipe.whySuitable.isNotBlank()) {
+            //     Spacer(modifier = Modifier.height(12.dp))
+            //     Text(
+            //         text = recipe.whySuitable,
+            //         style = MaterialTheme.typography.bodyMedium,
+            //         color = MaterialTheme.colorScheme.onSurfaceVariant,
+            //         maxLines = 2,
+            //         overflow = TextOverflow.Ellipsis
+            //     )
+            // }
             if (recipe.usedIngredients.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(14.dp))
                 IngredientStrip(ingredients = recipe.usedIngredients)

@@ -196,14 +196,14 @@ private fun RecipeDetailScreen(
                         // Position in the content, not on screen: it doesn't change with the scroll
                         .onGloballyPositioned { titleBottomPx = it.positionInParent().y + it.size.height }
                 )
-                if (recipe.whySuitable.isNotBlank()) {
-                    Text(
-                        text = recipe.whySuitable,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = ScreenPadding, end = ScreenPadding, top = 8.dp)
-                    )
-                }
+                // if (recipe.whySuitable.isNotBlank()) {
+                //     Text(
+                //         text = recipe.whySuitable,
+                //         style = MaterialTheme.typography.bodyLarge,
+                //         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                //         modifier = Modifier.padding(start = ScreenPadding, end = ScreenPadding, top = 8.dp)
+                //     )
+                // }
 
                 StatsCard(
                     recipe = recipe,
@@ -602,7 +602,7 @@ private fun Instructions(
 /**
  * While Gemma writes the recipe: the orb, the kitchen phrases and the progress,
  * floating at the bottom so they stay in sight wherever the page is scrolled, as
- * the reason it fits, the amounts and the steps fill in.
+ * the amounts and the steps fill in.
  */
 @Composable
 private fun WritingPanel(progress: Float) {

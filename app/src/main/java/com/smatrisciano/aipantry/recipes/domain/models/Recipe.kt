@@ -18,7 +18,7 @@ data class RecipeIngredient(
 @Serializable
 data class Recipe(
     val title: String,
-    val whySuitable: String,
+    // val whySuitable: String,
     val prepTimeMinutes: Int,
     val difficulty: Difficulty = Difficulty.EASY,
     val usedIngredients: List<RecipeIngredient>,

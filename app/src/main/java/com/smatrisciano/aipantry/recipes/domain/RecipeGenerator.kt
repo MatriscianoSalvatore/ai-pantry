@@ -12,7 +12,7 @@ sealed interface GenerationProgress {
 }
 
 /** The part of a recipe's details the model is writing. */
-enum class DetailsPart { INTRO, INGREDIENTS, STEPS, VARIANTS }
+enum class DetailsPart { /* INTRO, */ INGREDIENTS, STEPS, VARIANTS }
 
 /** What a list generation reports while the model writes. */
 sealed interface ListUpdate {

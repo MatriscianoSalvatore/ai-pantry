@@ -7,6 +7,7 @@ import com.smatrisciano.aipantry.recipes.domain.models.RecipeIngredient
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonObject
@@ -28,7 +29,7 @@ object RecipeJsonParser {
     @Serializable
     private data class RecipeDto(
         @JsonNames("titolo") val title: String = "",
-        @JsonNames("why_suitable", "reason", "perche", "perché") val whySuitable: String = "",
+        // @JsonNames("why_suitable", "reason", "perche", "perché") val whySuitable: String = "",
         @JsonNames("prep_time_minutes", "prepTime", "prep_time", "tempo") val prepTimeMinutes: Int = 20,
         @JsonNames("difficolta", "difficoltà") val difficulty: String = "EASY",
         @JsonNames("used_ingredients", "ingredients", "ingredienti") val usedIngredients: List<JsonElement> = emptyList(),
@@ -65,7 +66,7 @@ object RecipeJsonParser {
             ?: return null
         return Recipe(
             title = dto.title,
-            whySuitable = dto.whySuitable,
+            // whySuitable = dto.whySuitable,
             prepTimeMinutes = dto.prepTimeMinutes.coerceIn(1, 600),
             difficulty = parseDifficulty(dto.difficulty),
             usedIngredients = dto.usedIngredients.toIngredients(),
@@ -75,9 +76,12 @@ object RecipeJsonParser {
         )
     }
 
+    // amounts as JsonElement: the requested object ({"Pasta": "200 g"}), or the list
+    // of ingredients the model sometimes writes in its place
     @Serializable
     private data class DetailsDto(
-        @JsonNames("why_suitable", "reason", "perche", "perché") val whySuitable: String = "",
+        // @JsonNames("why_suitable", "reason", "perche", "perché") val whySuitable: String = "",
+        @JsonNames("quantities", "quantita", "quantità", "dosi") val amounts: JsonElement? = null,
         @JsonNames("ingredienti") val ingredients: List<JsonElement> = emptyList(),
         @JsonNames("passaggi", "procedimento") val steps: List<JsonElement> = emptyList(),
         @JsonNames("varianti") val variants: List<JsonElement> = emptyList()
@@ -94,9 +98,11 @@ object RecipeJsonParser {
 
     /** Completes the recipe with quantities/steps/variants from the second stage's output. */
     fun parseDetails(recipe: Recipe, rawOutput: String): Recipe {
-        val cleaned = stripFences(rawOutput)
+        val cleaned = withKeyColons(stripFences(rawOutput))
         val objectJson = extractBalanced(cleaned, '{', '}')
             ?: (if ("\\\"" in cleaned) extractBalanced(deEscape(cleaned), '{', '}') else null)
+            // The answer ended before its closing brace: what was complete is kept
+            ?: closeAtLastValue(cleaned)?.json
             ?: error("No JSON object found in LLM output")
         val detailed = recipe.withDetails(json.decodeFromString<DetailsDto>(objectJson))
         require(detailed.steps.isNotEmpty()) { "No steps in LLM output" }
@@ -113,7 +119,7 @@ object RecipeJsonParser {
      * isn't parsed again.
      */
     fun parsePartialDetails(recipe: Recipe, rawOutput: CharSequence, after: Int = -1): PartialDetails? {
-        val closed = closeAtLastValue(rawOutput) ?: return null
+        val closed = closeAtLastValue(withKeyColons(rawOutput)) ?: return null
         if (closed.end <= after) return null
         val dto = runCatching { json.decodeFromString<DetailsDto>(closed.json) }.getOrNull() ?: return null
         return PartialDetails(recipe.withDetails(dto), detailsPart(closed.openKey), closed.end)
@@ -122,28 +128,40 @@ object RecipeJsonParser {
     private fun Recipe.withDetails(dto: DetailsDto): Recipe {
         // In the list the small model often omits quantities: here (a focused task)
         // it produces them more reliably, so merge them where missing.
-        val amounts = dto.ingredients.toIngredients()
-        val enriched = usedIngredients.map { ing ->
+        val amounts = dto.amounts.toAmounts() + dto.ingredients.toIngredients()
+        fun List<RecipeIngredient>.enriched() = map { ing ->
             if (ing.quantity.isNotBlank()) return@map ing
-            val match = amounts.firstOrNull {
-                it.quantity.isNotBlank() && it.name.lowercase().let { n ->
-                    n == ing.name.lowercase() || n in ing.name.lowercase() || ing.name.lowercase() in n
-                }
-            }
+            val name = ing.name.lowercase()
+            val written = amounts.filter { it.quantity.isNotBlank() }
+            // The same name first: "pepe" mustn't take the amount of "peperoni"
+            val match = written.firstOrNull { it.name.lowercase() == name }
+                ?: written.firstOrNull { it.name.lowercase().let { n -> n in name || name in n } }
             if (match != null) ing.copy(quantity = match.quantity) else ing
         }
 
         return copy(
-            whySuitable = dto.whySuitable.ifBlank { whySuitable },
-            usedIngredients = enriched,
+            // whySuitable = dto.whySuitable.ifBlank { whySuitable },
+            usedIngredients = usedIngredients.enriched(),
+            missingIngredients = missingIngredients.enriched(),
             steps = dto.steps.toCleanStrings(),
             variants = dto.variants.toCleanStrings()
         )
     }
 
+    /** {"Pasta": "200 g", ...} as ingredients; a list in its place, as [toIngredients] reads it. */
+    private fun JsonElement?.toAmounts(): List<RecipeIngredient> = when (this) {
+        is JsonObject -> entries.mapNotNull { (name, amount) ->
+            val quantity = (amount as? JsonPrimitive)?.content?.trim().orEmpty()
+            name.trim().trimEnd(':').trim().takeIf { it.isNotEmpty() }?.let { RecipeIngredient(it, toMetric(quantity)) }
+        }.map { it.copy(name = stripImplicitLabel(it.name), quantity = stripImplicitLabel(it.quantity)) }
+        is JsonArray -> toIngredients()
+        else -> emptyList()
+    }
+
     /** The details part a top-level key holds, with the same aliases as [DetailsDto]. */
     private fun detailsPart(key: String?): DetailsPart? = when (key?.lowercase()) {
-        "whysuitable", "why_suitable", "reason", "perche", "perché" -> DetailsPart.INTRO
+        // "whysuitable", "why_suitable", "reason", "perche", "perché" -> DetailsPart.INTRO
+        "amounts", "quantities", "quantita", "quantità", "dosi",
         "ingredients", "ingredienti" -> DetailsPart.INGREDIENTS
         "steps", "passaggi", "procedimento" -> DetailsPart.STEPS
         "variants", "varianti" -> DetailsPart.VARIANTS
@@ -238,6 +256,14 @@ object RecipeJsonParser {
         else -> null
     }
 
+    /**
+     * The colon put inside a key's quotes, with nothing between key and value:
+     * `"Pomodori (datterini o pelati):" "400 g"` becomes `"Pomodori (datterini o pelati)": "400 g"`.
+     * The small model writes it now and then, describing an ingredient in its amounts.
+     */
+    private fun withKeyColons(text: CharSequence): String =
+        keyWithColonInside.replace(text) { "\"${it.groupValues[1]}\":${it.groupValues[2]}\"" }
+
     /** Removes the markdown fences around the JSON. */
     private fun stripFences(raw: String): String =
         raw.replace("```json", "").replace("```", "")
@@ -313,6 +339,8 @@ object RecipeJsonParser {
         Regex("""([\d.,]+)\s*(tbsps?|tsps?|tablespoons?|teaspoons?|cups?|cucchia(?:ini|ino|io|i)|tazz[ae])""", RegexOption.IGNORE_CASE)
 
     private val leadingNumberRegex = Regex("""^\s*\d+[.)]\s*""")
+    // A string on one line ending in a colon, then straight another string: its value
+    private val keyWithColonInside = Regex(""""((?:[^"\\\n]|\\.)*?)\s*:\s*"(\s*)"""")
     // "(implicito)", "(presunto)", "[implicit]" or a bare "implicito" left as the quantity
     private val implicitLabel =
         Regex(

@@ -373,8 +373,8 @@ class RecipeRepositoryImpl(
 
     /** How much of the details a recipe holds. */
     private fun Recipe.detailsSize(): Int =
-        (if (whySuitable.isNotBlank()) 1 else 0) + usedIngredients.count { it.quantity.isNotBlank() } +
-            steps.size + variants.size
+        // (if (whySuitable.isNotBlank()) 1 else 0) +
+        usedIngredients.count { it.quantity.isNotBlank() } + steps.size + variants.size
 
     /**
      * The list for [ingredients]: the one already there, or a new first one. With

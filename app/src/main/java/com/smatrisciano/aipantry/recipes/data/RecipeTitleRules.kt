@@ -15,11 +15,11 @@ package com.smatrisciano.aipantry.recipes.data
  */
 internal object RecipeTitleRules {
 
-    /** Sentence case, without minor ingredients or a redundant rice at the end. */
+    /** Sentence case, without minor ingredients or what every risotto has at the end. */
     fun tidy(title: String): String {
         var current = sentenceCase(title)
         while (true) {
-            val next = withoutRedundantRice(withoutMinorTail(current))
+            val next = withoutRisottoBasics(withoutMinorTail(current))
             if (next == current) return current
             current = next
         }
@@ -68,13 +68,14 @@ internal object RecipeTitleRules {
     }
 
     /**
-     * "Risotto ai funghi e riso" → "Risotto ai funghi": a risotto is made of rice
-     * already. The prompt asks not to name what the dish's name implies, but Gemma
-     * still slips now and then.
+     * "Risotto ai funghi e riso" or "Risotto ai funghi e parmigiano" → "Risotto ai
+     * funghi": a risotto is made of rice, and finished with parmigiano, already. The
+     * prompt asks not to name what the dish's name implies, but Gemma still slips now
+     * and then. A risotto that is all about the cheese keeps it ("Risotto al parmigiano").
      */
-    private fun withoutRedundantRice(title: String): String {
+    private fun withoutRisottoBasics(title: String): String {
         if (!title.lowercase().startsWith("risott")) return title
-        val tail = redundantRice.find(title) ?: return title
+        val tail = risottoBasics.find(title) ?: return title
         return cut(title, tail)
     }
 
@@ -136,9 +137,11 @@ internal object RecipeTitleRules {
     private val firstWord = Regex("""[a-zàèéìòù]+""")
     private val whitespace = Regex("""\s+""")
 
-    // Rice closing a risotto's title, with the variety or "per risotto" the inventory may carry
-    private val redundantRice = Regex(
-        """\s+(?:e|con)\s+(?:il )?riso(?: per risotto| carnaroli| arborio| vialone(?: nano)?)?$""",
+    // Rice closing a risotto's title, with the variety or "per risotto" the inventory may
+    // carry, or the parmigiano it is finished with
+    private val risottoBasics = Regex(
+        """\s+(?:e|con)\s+(?:il )?""" +
+            """(?:riso(?: per risotto| carnaroli| arborio| vialone(?: nano)?)?|parmigiano(?: reggiano)?|grana(?: padano)?)$""",
         RegexOption.IGNORE_CASE
     )
 

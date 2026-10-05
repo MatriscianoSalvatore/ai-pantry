@@ -24,7 +24,7 @@ class WaitTimeEstimator(context: Context) {
         LIST_RECIPE_CHARS(250),
 
         /** Characters of a recipe's details. */
-        DETAILS_CHARS(2_200)
+        DETAILS_CHARS(1_500)
     }
 
     private val prefs = context.getSharedPreferences("wait_times", Context.MODE_PRIVATE)

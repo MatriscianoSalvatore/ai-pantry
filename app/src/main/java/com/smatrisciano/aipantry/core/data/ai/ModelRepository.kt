@@ -244,10 +244,7 @@ class ModelRepository(
     fun cacheFiles(model: LlmModel): List<File> {
         val file = modelFile(model)
         return file.parentFile
-            ?.listFiles { other ->
-                other.name.startsWith("${file.name}.") && !other.name.endsWith(".assembling") &&
-                    !other.name.endsWith(".copying")
-            }
+            ?.listFiles { other -> isCache(other.name, file.name) }
             ?.toList()
             .orEmpty()
     }
@@ -255,17 +252,24 @@ class ModelRepository(
     /**
      * A file of the models folder still in use: a model of the catalog, the copy in
      * progress of one that isn't there yet or, next to one that is, the XNNPack caches
-     * LiteRT-LM writes ("<model file>.xnnpack_cache_…": the weights already laid out
-     * for the CPU, which every launch would otherwise build again).
+     * LiteRT-LM writes (the weights already laid out for the CPU, which every launch
+     * would otherwise build again).
      */
     private fun isNeeded(name: String, known: List<String>): Boolean = known.any { model ->
         val present = File(modelsDir(), model).exists()
         when (name) {
             model -> true
             "$model.assembling", "$model.copying" -> !present
-            else -> present && name.startsWith("$model.")
+            else -> present && isCache(name, model)
         }
     }
+
+    /**
+     * A cache the LiteRT-LM in use writes next to [model]: "<model>_<hash>_<size>.xnnpack_cache".
+     * A cache named another way ("<model>.xnnpack_cache_…") is another runtime's: this
+     * one doesn't read it, and it goes (almost 1 GB).
+     */
+    private fun isCache(name: String, model: String): Boolean = name.startsWith("${model}_")
 
     private fun setStatus(model: LlmModel, status: ModelStatus) {
         _statuses.update { it + (model.id to status) }

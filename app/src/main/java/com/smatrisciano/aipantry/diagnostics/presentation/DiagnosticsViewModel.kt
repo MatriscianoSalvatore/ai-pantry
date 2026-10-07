@@ -7,8 +7,10 @@ import com.smatrisciano.aipantry.capture.domain.IngredientDetector
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Measure
 import com.smatrisciano.aipantry.core.data.ai.BackgroundAiWork
+import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
+import com.smatrisciano.aipantry.core.data.ai.NanoState
 import com.smatrisciano.aipantry.diagnostics.data.DeviceMonitor
 import com.smatrisciano.aipantry.diagnostics.data.DeviceSnapshot
 import com.smatrisciano.aipantry.diagnostics.presentation.DiagnosticsActions.Interaction
@@ -29,6 +31,7 @@ class DiagnosticsViewModel(
     private val engineHolder: LlmEngineHolder,
     private val detector: IngredientDetector,
     private val waitTimes: WaitTimeEstimator,
+    private val nano: GeminiNanoWriter,
     backgroundAiWork: BackgroundAiWork
 ) : ViewModel() {
 
@@ -43,17 +46,28 @@ class DiagnosticsViewModel(
         }
     }.flowOn(Dispatchers.Default)
 
+    // Asked apart from the readings, which don't wait for AICore to answer
+    private val nanoState = flow<NanoState?> {
+        emit(null)
+        while (true) {
+            emit(nano.state())
+            delay(NANO_REFRESH_MILLIS)
+        }
+    }.flowOn(Dispatchers.Default)
+
     val uiState: StateFlow<DiagnosticsState> = combine(
         readings,
         recipeRepository.cache,
         recipeRepository.work,
-        backgroundAiWork.isAllowed
-    ) { readings, cache, work, aheadAllowed ->
+        backgroundAiWork.isAllowed,
+        nanoState
+    ) { readings, cache, work, aheadAllowed, nano ->
         DiagnosticsState(
             device = readings.device,
             deviceInfo = deviceMonitor.deviceInfo,
             appVersion = "${BuildConfig.VERSION_NAME} · ${BuildConfig.FLAVOR}",
             model = readings.model,
+            nano = nano,
             learned = readings.learned,
             aheadAllowed = aheadAllowed,
             work = work,
@@ -94,5 +108,8 @@ class DiagnosticsViewModel(
     private companion object {
         // The thermal headroom can be asked at most once a second
         const val REFRESH_MILLIS = 2_000L
+
+        // Gemini Nano changes only while AICore downloads it
+        const val NANO_REFRESH_MILLIS = 5_000L
     }
 }

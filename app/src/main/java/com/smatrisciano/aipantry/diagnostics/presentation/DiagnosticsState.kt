@@ -1,6 +1,7 @@
 package com.smatrisciano.aipantry.diagnostics.presentation
 
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
+import com.smatrisciano.aipantry.core.data.ai.NanoState
 import com.smatrisciano.aipantry.diagnostics.data.DeviceInfo
 import com.smatrisciano.aipantry.diagnostics.data.DeviceSnapshot
 import com.smatrisciano.aipantry.recipes.domain.CachedList
@@ -32,6 +33,8 @@ data class DiagnosticsState(
     val deviceInfo: DeviceInfo? = null,
     val appVersion: String = "",
     val model: ModelInfo? = null,
+    /** Null while AICore hasn't answered yet. */
+    val nano: NanoState? = null,
     val learned: LearnedWaits? = null,
     /** Recipes may be written ahead of time right now (not with the camera open or the app hidden). */
     val aheadAllowed: Boolean = true,

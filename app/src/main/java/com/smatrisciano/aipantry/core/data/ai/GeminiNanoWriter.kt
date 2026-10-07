@@ -27,7 +27,7 @@ class GeminiNanoWriter {
 
     // The base model doesn't change while the app runs: asked once, when it is there
     @Volatile
-    private var generation: Int? = null
+    private var baseModel: String? = null
 
     // Failed in this session (a quota, an AICore error): Gemma writes until the next launch
     @Volatile
@@ -45,7 +45,7 @@ class GeminiNanoWriter {
      */
     suspend fun isUsable(): Boolean {
         val usable = !failed && runCatching {
-            model.checkStatus() == FeatureStatus.AVAILABLE && baseGeneration() >= MIN_GENERATION
+            model.checkStatus() == FeatureStatus.AVAILABLE && generationOf(baseModelName()) >= MIN_GENERATION
         }.getOrElse {
             // No AICore on the phone, or not answering: not asked again in this session
             Log.w(TAG, "AICore unreachable: Gemma writes the recipes", it)
@@ -77,21 +77,42 @@ class GeminiNanoWriter {
         _available.value = false
     }
 
-    /** "nano-v3" → 3, "nano-v4-fast" → 4: the first number after "nano", 0 if there is none. */
-    private suspend fun baseGeneration(): Int =
-        generation ?: model.getBaseModelName().let { name ->
-            val number = generationNumber.find(name)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            Log.i(TAG, "Gemini Nano base model: $name")
-            number.also { generation = it }
+    /** Gemini Nano on this phone as AICore describes it now, for the diagnostics: who writes doesn't change. */
+    suspend fun state(): NanoState = runCatching {
+        when (model.checkStatus()) {
+            FeatureStatus.AVAILABLE -> {
+                val name = baseModelName()
+                val generation = generationOf(name)
+                NanoState.Ready(name, generation, writesRecipes = !failed && generation >= MIN_GENERATION)
+            }
+            FeatureStatus.DOWNLOADABLE -> NanoState.Downloadable
+            FeatureStatus.DOWNLOADING -> NanoState.Downloading
+            else -> NanoState.Unsupported
         }
+    }.getOrElse { error ->
+        if (error is CancellationException) throw error
+        NanoState.Unreachable
+    }
+
+    private suspend fun baseModelName(): String =
+        baseModel ?: model.getBaseModelName().also { name ->
+            Log.i(TAG, "Gemini Nano base model: $name")
+            baseModel = name
+        }
+
+    /** "nano-v3" → 3, "nano-v4-fast" → 4: the first number after "nano", 0 if there is none. */
+    private fun generationOf(name: String): Int =
+        generationNumber.find(name)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
     companion object {
         /** Shown where the recipes say which model wrote them. */
         const val DISPLAY_NAME = "Gemini Nano 4"
         const val ENGINE_NAME = "$DISPLAY_NAME · AICore"
 
+        /** The first Gemini Nano that writes the recipes: an earlier one only recognizes the ingredients. */
+        const val MIN_GENERATION = 4
+
         private const val TAG = "GeminiNanoWriter"
-        private const val MIN_GENERATION = 4
 
         // A list or a recipe's details run to 400-650 tokens: room to spare, well under
         // the 4K AICore advises against going past
@@ -103,3 +124,24 @@ class GeminiNanoWriter {
 
 /** Gemini Nano couldn't write an answer (a quota, an AICore error): Gemma takes over. */
 class NanoFailureException(cause: Throwable) : Exception("Gemini Nano failed", cause)
+
+/** Gemini Nano on this phone, as AICore describes it. */
+sealed interface NanoState {
+    /** No AICore on the phone, or it isn't answering. */
+    data object Unreachable : NanoState
+
+    /** AICore doesn't offer Gemini Nano on this phone. */
+    data object Unsupported : NanoState
+
+    /** Offered, not downloaded yet: the ingredient detector asks for it. */
+    data object Downloadable : NanoState
+
+    data object Downloading : NanoState
+
+    /**
+     * On the phone, as [baseModel] ("nano-v4-fast", [generation] 4). It recognizes the
+     * ingredients whatever its generation; it [writesRecipes] from Gemini Nano 4 on, unless
+     * it failed in this session.
+     */
+    data class Ready(val baseModel: String, val generation: Int, val writesRecipes: Boolean) : NanoState
+}

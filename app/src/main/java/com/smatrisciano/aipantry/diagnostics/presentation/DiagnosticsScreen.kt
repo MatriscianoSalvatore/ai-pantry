@@ -52,7 +52,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.R
+import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
+import com.smatrisciano.aipantry.core.data.ai.NanoState
 import com.smatrisciano.aipantry.core.presentation.theme.extendedColors
 import com.smatrisciano.aipantry.diagnostics.data.CpuCluster
 import com.smatrisciano.aipantry.diagnostics.data.DeviceInfo
@@ -118,7 +120,7 @@ private fun DiagnosticsScreen(
                 item(key = "memory") { MemorySection(device) }
             }
             state.model?.let { model ->
-                item(key = "model") { ModelSection(model, state.work, state.aheadAllowed) }
+                item(key = "model") { ModelSection(model, state.nano, state.work, state.aheadAllowed) }
             }
             state.learned?.let { learned ->
                 item(key = "learned") { LearnedSection(learned) }
@@ -313,14 +315,22 @@ private fun MemorySection(device: DeviceSnapshot) {
 }
 
 @Composable
-private fun ModelSection(model: ModelInfo, work: RecipeWork, aheadAllowed: Boolean) {
+private fun ModelSection(model: ModelInfo, nano: NanoState?, work: RecipeWork, aheadAllowed: Boolean) {
     val scheme = MaterialTheme.colorScheme
     val colors = MaterialTheme.extendedColors
     Section(title = stringResource(R.string.diag_section_model)) {
+        NanoRow(nano)
         InfoRow(
-            label = stringResource(R.string.diag_model),
+            label = stringResource(R.string.diag_gemma),
             value = "${model.name} · ${modelStatusLabel(model.status)}",
-            first = true
+            caption = stringResource(
+                if ((nano as? NanoState.Ready)?.writesRecipes == true) R.string.diag_gemma_backup else R.string.diag_gemma_writes
+            ),
+            valueColor = when (model.status) {
+                ModelStatus.Ready -> colors.success
+                is ModelStatus.Failed, ModelStatus.NotInstalled -> scheme.error
+                else -> scheme.onSurface
+            }
         )
         InfoRow(
             label = stringResource(R.string.diag_model_file),
@@ -366,6 +376,42 @@ private fun ModelSection(model: ModelInfo, work: RecipeWork, aheadAllowed: Boole
             value = stringResource(if (aheadAllowed) R.string.diag_ahead_allowed else R.string.diag_ahead_paused)
         )
     }
+}
+
+/** Whether the phone has Gemini Nano, which one, and what it does in the app. */
+@Composable
+private fun NanoRow(nano: NanoState?) {
+    val scheme = MaterialTheme.colorScheme
+    InfoRow(
+        label = stringResource(R.string.diag_nano),
+        value = when (nano) {
+            null -> stringResource(R.string.diag_nano_checking)
+            NanoState.Unreachable -> stringResource(R.string.diag_nano_unreachable)
+            NanoState.Unsupported -> stringResource(R.string.diag_nano_unsupported)
+            NanoState.Downloadable -> stringResource(R.string.diag_nano_downloadable)
+            NanoState.Downloading -> stringResource(R.string.diag_nano_downloading)
+            is NanoState.Ready -> {
+                val name = if (nano.generation > 0) "Gemini Nano ${nano.generation}" else nano.baseModel
+                "$name · ${stringResource(R.string.diag_model_ready)}"
+            }
+        },
+        caption = (nano as? NanoState.Ready)?.let {
+            stringResource(
+                when {
+                    it.writesRecipes -> R.string.diag_nano_writes
+                    it.generation >= GeminiNanoWriter.MIN_GENERATION -> R.string.diag_nano_failed
+                    else -> R.string.diag_nano_ingredients
+                },
+                it.baseModel
+            )
+        },
+        valueColor = when (nano) {
+            is NanoState.Ready -> MaterialTheme.extendedColors.success
+            NanoState.Downloadable, NanoState.Downloading -> scheme.onSurface
+            else -> scheme.onSurfaceVariant
+        },
+        first = true
+    )
 }
 
 @Composable

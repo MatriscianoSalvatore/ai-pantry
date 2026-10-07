@@ -399,11 +399,11 @@ private fun ModelSection(
             valueColor = if (model.gpuDisabled) scheme.onSurfaceVariant else colors.success
         )
         InfoRow(
-            label = stringResource(R.string.diag_xnnpack_cache),
+            label = stringResource(R.string.diag_caches),
             value = if (model.cacheFileCount > 0) {
-                stringResource(R.string.diag_xnnpack_cache_value, bytes(model.cacheBytes), model.cacheFileCount)
+                stringResource(R.string.diag_caches_value, bytes(model.cacheBytes), model.cacheFileCount)
             } else {
-                stringResource(R.string.diag_xnnpack_cache_none)
+                stringResource(R.string.diag_caches_none)
             },
             valueColor = if (model.cacheFileCount > 0) scheme.onSurface else colors.warning
         )

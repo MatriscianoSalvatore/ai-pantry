@@ -314,45 +314,41 @@ class ModelRepository(
 
     /** Removes models from previous app versions (e.g. after a catalog change), with their files. */
     private fun cleanupOrphanedFiles() {
-        val known = LlmCatalog.all.map { it.fileName }
         modelsDir().listFiles()?.forEach { file ->
-            if (!isNeeded(file.name, known)) {
+            if (!isNeeded(file.name)) {
                 Log.i(TAG, "Deleting orphaned model file ${file.name} (${file.length()} bytes)")
                 file.delete()
             }
         }
     }
 
-    /** The XNNPack caches LiteRT-LM keeps next to [model]'s file (see [isNeeded]). */
-    fun cacheFiles(model: LlmModel): List<File> {
-        val file = modelFile(model)
-        return file.parentFile
-            ?.listFiles { other -> isCache(other.name, file.name) }
-            ?.toList()
-            .orEmpty()
-    }
+    /** The caches LiteRT-LM keeps for [model] in the models folder (see [isNeeded]). */
+    fun cacheFiles(model: LlmModel): List<File> =
+        modelsDir().listFiles { other -> isCache(other.name, model.fileName) }?.toList().orEmpty()
 
     /**
      * A file of the models folder still in use: a model of the catalog, the copy in
-     * progress of one that isn't there yet or, next to one that is, the XNNPack caches
-     * LiteRT-LM writes (the weights already laid out for the CPU, which every launch
-     * would otherwise build again).
+     * progress of one that isn't there yet or, for one that is (here or pushed with adb),
+     * the caches LiteRT-LM writes: the weights already laid out for the CPU (XNNPack) and
+     * for the GPU (ML Drift), which every launch would otherwise build again.
      */
-    private fun isNeeded(name: String, known: List<String>): Boolean = known.any { model ->
-        val present = File(modelsDir(), model).exists()
+    private fun isNeeded(name: String): Boolean = LlmCatalog.all.any { model ->
         when (name) {
-            model -> true
-            "$model.assembling", "$model.copying" -> !present
-            else -> present && isCache(name, model)
+            model.fileName -> true
+            "${model.fileName}.assembling", "${model.fileName}.copying" -> !File(modelsDir(), model.fileName).exists()
+            else -> isCache(name, model.fileName) && modelFile(model).exists()
         }
     }
 
     /**
-     * A cache the LiteRT-LM in use writes next to [model]: "<model>_<hash>_<size>.xnnpack_cache".
-     * A cache named another way ("<model>.xnnpack_cache_…") is another runtime's: this
-     * one doesn't read it, and it goes (almost 1 GB).
+     * A cache the LiteRT-LM in use writes for [model], carrying the model's hash and size:
+     * "<model>_<hash>_<size>.xnnpack_cache", "<model>_<hash>_<size>_mldrift_weight_cache.bin",
+     * "<model>.vision_encoder_<hash>_<size>_mldrift_program_cache.bin"… One named
+     * "<model>.xnnpack_cache_<hash>_<size>" is another runtime's: this one doesn't read
+     * it, and it goes (almost 1 GB).
      */
-    private fun isCache(name: String, model: String): Boolean = name.startsWith("${model}_")
+    private fun isCache(name: String, model: String): Boolean =
+        name.startsWith(model) && name != model && XNNPACK_CACHE_OF_ANOTHER_RUNTIME !in name
 
     /**
      * Takes [model] off the device: out of memory, its file and the caches written next to it.
@@ -406,12 +402,19 @@ class ModelRepository(
         }
     }
 
-    private fun modelsDir(): File =
-        (context.getExternalFilesDir("models") ?: File(context.filesDir, "models"))
-            .apply { mkdirs() }
+    private fun modelsDir(): File = modelsDir(context)
 
     private companion object {
         const val TAG = "ModelRepository"
         const val BUFFER_SIZE = 1024 * 1024
+        const val XNNPACK_CACHE_OF_ANOTHER_RUNTIME = ".xnnpack_cache_"
     }
 }
+
+/**
+ * The app's own folder for the models and for the caches LiteRT-LM writes for them, wherever
+ * the model is read from: a model pushed with adb sits in a folder the app can't write to.
+ */
+internal fun modelsDir(context: Context): File =
+    (context.getExternalFilesDir("models") ?: File(context.filesDir, "models"))
+        .apply { mkdirs() }

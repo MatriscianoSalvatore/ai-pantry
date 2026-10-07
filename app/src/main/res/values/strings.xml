@@ -171,9 +171,9 @@
     <string name="diag_gpu">GPU</string>
     <string name="diag_gpu_disabled">Not usable on this device</string>
     <string name="diag_gpu_available">Usable</string>
-    <string name="diag_xnnpack_cache">XNNPack cache</string>
-    <string name="diag_xnnpack_cache_value">%1$s · %2$d files</string>
-    <string name="diag_xnnpack_cache_none">Missing: rebuilt at the next load</string>
+    <string name="diag_caches">CPU and GPU caches</string>
+    <string name="diag_caches_value">%1$s · %2$d files</string>
+    <string name="diag_caches_none">Missing: rebuilt at the next load</string>
     <string name="diag_detector">Recognition</string>
     <string name="diag_work">Gemma right now</string>
     <string name="diag_work_idle">Idle</string>

@@ -387,7 +387,10 @@ class LlmEngineHolder(private val context: Context, private val choices: ModelPr
         val config = EngineConfig(
             modelPath = path,
             backend = backend,
-            visionBackend = if (model.supportsVision) backend else null
+            visionBackend = if (model.supportsVision) backend else null,
+            // Without it the caches go next to the model, and where that folder can't be
+            // written the GPU doesn't start at all: it has to write its weights first
+            cacheDir = modelsDir(context).absolutePath
         )
         Engine(config).apply { initialize() }
     }.onFailure {

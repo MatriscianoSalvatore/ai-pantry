@@ -73,6 +73,15 @@ class LlmEngineHolder(private val context: Context) {
 
     fun currentBackendIsGpu(): Boolean = engineIsGpu
 
+    /** Takes the model out of memory (its file is about to go): the next [acquire] loads it again. */
+    @Synchronized
+    fun unload() {
+        engine?.close()
+        engine = null
+        enginePath = null
+        engineIsGpu = false
+    }
+
     /** The model is in memory, ready to answer. */
     fun isLoaded(): Boolean = engine != null
 

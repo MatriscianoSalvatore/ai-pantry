@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,12 +28,15 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.R
+import com.smatrisciano.aipantry.core.data.ai.ModelChoice
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
 import com.smatrisciano.aipantry.core.presentation.theme.extendedColors
 import com.smatrisciano.aipantry.diagnostics.data.CpuCluster
@@ -97,6 +103,7 @@ private fun DiagnosticsScreen(
     onAction: (DiagnosticsActions) -> Unit
 ) {
     var confirmClear by remember { mutableStateOf(false) }
+    var confirmRemoveGemma by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -119,6 +126,18 @@ private fun DiagnosticsScreen(
             }
             state.model?.let { model ->
                 item(key = "model") { ModelSection(model, state.work, state.aheadAllowed) }
+            }
+            state.selection?.let { selection ->
+                item(key = "choices") { ChoicesSection(selection, onAction) }
+            }
+            state.weights?.let { weights ->
+                item(key = "weights") {
+                    WeightsSection(
+                        weights = weights,
+                        onRemoveClick = { confirmRemoveGemma = true },
+                        onRestoreClick = { onAction(Interaction.OnRestoreGemmaClick) }
+                    )
+                }
             }
             state.learned?.let { learned ->
                 item(key = "learned") { LearnedSection(learned) }
@@ -152,6 +171,38 @@ private fun DiagnosticsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmClear = false }) {
+                    Text(stringResource(R.string.diag_cancel))
+                }
+            }
+        )
+    }
+    if (confirmRemoveGemma) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoveGemma = false },
+            title = { Text(stringResource(R.string.diag_remove_gemma_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.diag_remove_gemma_body,
+                        bytes((state.weights?.gemmaBytes ?: 0L) + (state.weights?.gemmaCacheBytes ?: 0L))
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRemoveGemma = false
+                        onAction(Interaction.OnRemoveGemmaClick)
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.diag_remove_gemma_confirm),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemoveGemma = false }) {
                     Text(stringResource(R.string.diag_cancel))
                 }
             }
@@ -365,6 +416,183 @@ private fun ModelSection(model: ModelInfo, work: RecipeWork, aheadAllowed: Boole
             label = stringResource(R.string.diag_ahead),
             value = stringResource(if (aheadAllowed) R.string.diag_ahead_allowed else R.string.diag_ahead_paused)
         )
+    }
+}
+
+/** The model each task is given to, and the verbose display. A model that isn't there can't be picked. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChoicesSection(selection: ModelSelection, onAction: (DiagnosticsActions) -> Unit) {
+    Section(
+        title = stringResource(R.string.diag_section_choices),
+        caption = stringResource(R.string.diag_choices_caption)
+    ) {
+        ChoiceRow(
+            label = stringResource(R.string.diag_choice_scan),
+            selected = selection.scan,
+            options = listOf(ModelChoice.AUTO, ModelChoice.NANO, ModelChoice.GEMMA, ModelChoice.CLIP),
+            selection = selection,
+            first = true,
+            onSelect = { onAction(Interaction.OnScanChoice(it)) }
+        )
+        ChoiceRow(
+            label = stringResource(R.string.diag_choice_recipes),
+            selected = selection.recipes,
+            options = listOf(ModelChoice.AUTO, ModelChoice.NANO, ModelChoice.GEMMA),
+            selection = selection,
+            onSelect = { onAction(Interaction.OnRecipeChoice(it)) }
+        )
+        HorizontalDivider(
+            modifier = Modifier.padding(start = RowPadding),
+            color = MaterialTheme.colorScheme.outlineVariant
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = RowPadding, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = stringResource(R.string.diag_verbose), style = MaterialTheme.typography.bodyLarge)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.diag_verbose_caption),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = selection.verbose,
+                onCheckedChange = { onAction(Interaction.OnVerboseChange(it)) }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChoiceRow(
+    label: String,
+    selected: ModelChoice,
+    options: List<ModelChoice>,
+    selection: ModelSelection,
+    onSelect: (ModelChoice) -> Unit,
+    first: Boolean = false
+) {
+    if (!first) {
+        HorizontalDivider(
+            modifier = Modifier.padding(start = RowPadding),
+            color = MaterialTheme.colorScheme.outlineVariant
+        )
+    }
+    Column(modifier = Modifier.padding(horizontal = RowPadding, vertical = 14.dp)) {
+        Text(text = label, style = MaterialTheme.typography.bodyLarge)
+        Spacer(modifier = Modifier.height(8.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            options.forEach { option ->
+                val present = when (option) {
+                    ModelChoice.AUTO -> true
+                    ModelChoice.NANO -> selection.nanoPresent
+                    ModelChoice.GEMMA -> selection.gemmaReady
+                    ModelChoice.CLIP -> selection.clipPresent
+                }
+                val name = choiceName(option)
+                FilterChip(
+                    selected = option == selected,
+                    // A choice that isn't there can still be let go of
+                    enabled = present || option == selected,
+                    onClick = { onSelect(option) },
+                    label = {
+                        Text(if (present) name else stringResource(R.string.diag_choice_missing, name))
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun choiceName(choice: ModelChoice): String = stringResource(
+    when (choice) {
+        ModelChoice.AUTO -> R.string.diag_choice_auto
+        ModelChoice.NANO -> R.string.diag_choice_nano
+        ModelChoice.GEMMA -> R.string.diag_choice_gemma
+        ModelChoice.CLIP -> R.string.diag_choice_clip
+    }
+)
+
+/** What each model weighs and where it lives, with Gemma, the one the app owns, removable. */
+@Composable
+private fun WeightsSection(weights: ModelWeights, onRemoveClick: () -> Unit, onRestoreClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Section(
+        title = stringResource(R.string.diag_section_weights),
+        caption = stringResource(R.string.diag_weights_caption)
+    ) {
+        InfoRow(
+            label = stringResource(R.string.diag_weight_gemma),
+            value = weights.gemmaBytes?.let { bytes(it) } ?: stringResource(R.string.diag_weight_absent),
+            caption = if (weights.gemmaRemovedByUser) stringResource(R.string.diag_weight_gemma_removed) else modelStatusLabel(weights.gemmaStatus),
+            first = true
+        )
+        if (weights.gemmaCacheBytes > 0) {
+            InfoRow(
+                label = stringResource(R.string.diag_weight_gemma_cache),
+                value = bytes(weights.gemmaCacheBytes),
+                caption = stringResource(R.string.diag_weight_gemma_cache_caption)
+            )
+        }
+        InfoRow(
+            label = stringResource(R.string.diag_weight_clip),
+            value = weights.clipBytes?.let { bytes(it) } ?: stringResource(R.string.diag_weight_not_in_build),
+            caption = stringResource(R.string.diag_weight_clip_caption)
+        )
+        InfoRow(
+            label = stringResource(R.string.diag_weight_nano),
+            value = weights.nanoBytes?.let { bytes(it) }
+                ?: stringResource(if (weights.nanoPresent) R.string.diag_weight_size_unknown else R.string.diag_weight_absent),
+            caption = listOfNotNull(
+                weights.nanoBaseModel,
+                stringResource(R.string.diag_weight_nano_caption)
+            ).joinToString(" · ")
+        )
+    }
+    Spacer(modifier = Modifier.height(16.dp))
+    if (weights.gemmaRemovedByUser) {
+        FilledTonalButton(
+            onClick = onRestoreClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Text(text = stringResource(R.string.diag_restore_gemma), style = MaterialTheme.typography.titleSmall)
+        }
+    } else {
+        OutlinedButton(
+            onClick = onRemoveClick,
+            enabled = weights.gemmaBytes != null,
+            shape = CircleShape,
+            border = BorderStroke(
+                1.dp,
+                if (weights.gemmaBytes != null) scheme.error else scheme.outlineVariant
+            ),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = scheme.error),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.DeleteSweep,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = stringResource(R.string.diag_remove_gemma), style = MaterialTheme.typography.titleSmall)
+        }
     }
 }
 

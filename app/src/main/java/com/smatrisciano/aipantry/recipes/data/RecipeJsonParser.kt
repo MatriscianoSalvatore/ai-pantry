@@ -104,9 +104,55 @@ object RecipeJsonParser {
             // The answer ended before its closing brace: what was complete is kept
             ?: closeAtLastValue(cleaned)?.json
             ?: error("No JSON object found in LLM output")
-        val detailed = recipe.withDetails(json.decodeFromString<DetailsDto>(objectJson))
+        val detailed = recipe.withDetails(decodeDetails(objectJson))
         require(detailed.steps.isNotEmpty()) { "No steps in LLM output" }
         return detailed
+    }
+
+    /**
+     * The details in [objectJson]. An answer written in several pieces (see Gemini Nano's
+     * continuations) can close an array with the wrong bracket or leave one open: when the
+     * text doesn't decode as it is, it is tried again with the brackets matched.
+     */
+    private fun decodeDetails(objectJson: String): DetailsDto =
+        runCatching { json.decodeFromString<DetailsDto>(objectJson) }.getOrElse { failure ->
+            val matched = withBracketsMatched(objectJson)
+            if (matched == objectJson) throw failure
+            json.decodeFromString<DetailsDto>(matched)
+        }
+
+    /**
+     * [text] with every bracket that is still open when another kind closes (or when the
+     * text ends) closed first, and the comma left before it dropped. Strings are skipped.
+     */
+    private fun withBracketsMatched(text: String): String {
+        val out = StringBuilder()
+        val open = ArrayDeque<Char>()
+        var inString = false
+        var escaped = false
+        fun closeOpenOnes(until: Char?) {
+            while (open.isNotEmpty() && open.last() != until) {
+                while (out.isNotEmpty() && (out.last().isWhitespace() || out.last() == ',')) out.setLength(out.length - 1)
+                out.append(open.removeLast())
+            }
+        }
+        for (c in text) {
+            when {
+                escaped -> escaped = false
+                c == '\\' && inString -> escaped = true
+                c == '"' -> inString = !inString
+                inString -> {}
+                c == '{' -> open.addLast('}')
+                c == '[' -> open.addLast(']')
+                c == '}' || c == ']' -> {
+                    closeOpenOnes(until = c)
+                    if (open.isNotEmpty()) open.removeLast()
+                }
+            }
+            out.append(c)
+        }
+        closeOpenOnes(until = null)
+        return out.toString()
     }
 
     /** The details written so far: [recipe] with them, the part still coming and where the answer was cut. */

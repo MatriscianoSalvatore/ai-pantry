@@ -217,4 +217,49 @@
     <string name="diag_device_cores">Core della CPU</string>
     <string name="diag_app_version">App</string>
     <string name="diag_unavailable">Non disponibile</string>
+
+    <!-- Pagina nascosta: scelta dei modelli, pesi, modalità verbosa -->
+    <string name="diag_section_choices">Modello per ogni compito</string>
+    <string name="diag_choices_caption">Un modello assente non si può scegliere: subentra il successivo.</string>
+    <string name="diag_choice_scan">Riconoscere gli ingredienti nella foto</string>
+    <string name="diag_choice_recipes">Scrivere le ricette</string>
+    <string name="diag_choice_auto">Automatico</string>
+    <string name="diag_choice_nano">Gemini Nano</string>
+    <string name="diag_choice_gemma">Gemma 4</string>
+    <string name="diag_choice_clip">MobileCLIP</string>
+    <string name="diag_choice_missing">%1$s · assente</string>
+    <string name="diag_verbose">Modalità verbosa</string>
+    <string name="diag_verbose_caption">Modello in uso, velocità e temperatura su ogni schermata</string>
+    <string name="diag_section_weights">Modelli sul dispositivo</string>
+    <string name="diag_weights_caption">Quanto pesa ciascuno e dove sta</string>
+    <string name="diag_weight_gemma">Gemma 4 E2B</string>
+    <string name="diag_weight_gemma_removed">Rimosso a mano</string>
+    <string name="diag_weight_gemma_cache">Cache di Gemma</string>
+    <string name="diag_weight_gemma_cache_caption">Scritte accanto al modello; se ne vanno con lui</string>
+    <string name="diag_weight_clip">MobileCLIP-S2</string>
+    <string name="diag_weight_clip_caption">Nell\'APK: lo toglie solo la disinstallazione</string>
+    <string name="diag_weight_nano">Gemini Nano</string>
+    <string name="diag_weight_nano_caption">Lo tiene AICore: l\'app non può cancellarlo</string>
+    <string name="diag_weight_absent">Assente</string>
+    <string name="diag_weight_not_in_build">Non in questa build</string>
+    <string name="diag_weight_size_unknown">Peso non noto</string>
+    <string name="diag_remove_gemma">Cancella Gemma</string>
+    <string name="diag_restore_gemma">Ripristina Gemma</string>
+    <string name="diag_remove_gemma_title">Cancellare Gemma?</string>
+    <string name="diag_remove_gemma_body">Libera %1$s. Resta fuori, anche dopo un riavvio, finché non la ripristini: il ripristino la copia di nuovo dai pack di Play o dall\'APK.</string>
+    <string name="diag_remove_gemma_confirm">Cancella</string>
+
+    <!-- Sovrapposizione verbosa -->
+    <string name="verbose_task_scan">Scansione</string>
+    <string name="verbose_task_list">Lista ricette</string>
+    <string name="verbose_task_details">Dettagli</string>
+    <string name="verbose_run_head">%1$s · %2$s · %3$s</string>
+    <string name="verbose_run_working">scrive… %1$.1f s · %2$d rich.</string>
+    <string name="verbose_run_stats">attesa %1$.1f s · totale %2$.1f s · %3$d rich.</string>
+    <string name="verbose_run_speed">%1$d car. · %2$.0f car/s (~%3$.0f tok/s)</string>
+    <string name="verbose_run_scan">%1$.1f s · %2$d trovati</string>
+    <string name="verbose_run_failed">fallito</string>
+    <string name="verbose_idle">Ancora nulla in esecuzione</string>
+    <string name="verbose_heat">Batteria %1$s · %2$s · margine %3$s</string>
+    <string name="verbose_memory">RAM app %1$s · libera %2$s</string>
 </resources>

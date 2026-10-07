@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.io.File
 
 sealed interface ModelStatus {
@@ -40,7 +41,8 @@ class ModelRepository(
     private val aiPackManager: AiPackManager,
     private val appScope: CoroutineScope,
     private val engineHolder: LlmEngineHolder,
-    private val nano: GeminiNanoWriter
+    private val nano: GeminiNanoWriter,
+    private val choices: ModelPreferences
 ) {
 
     private val _statuses = MutableStateFlow<Map<String, ModelStatus>>(emptyMap())
@@ -73,6 +75,11 @@ class ModelRepository(
     private suspend fun refresh() {
         cleanupOrphanedFiles()
         LlmCatalog.all.forEach { model ->
+            // Taken off by hand: it stays off until it is restored
+            if (choices.gemmaRemovedByUser && !isProvisioned(model)) {
+                setStatus(model, ModelStatus.NotInstalled)
+                return@forEach
+            }
             if (isProvisioned(model)) {
                 setStatus(model, ModelStatus.Ready)
                 return@forEach
@@ -272,8 +279,31 @@ class ModelRepository(
      */
     private fun isCache(name: String, model: String): Boolean = name.startsWith("${model}_")
 
+    /**
+     * Takes [model] off the device: out of memory, its file and the caches written next to it.
+     * It isn't provisioned again (from the Play packs or the APK) until [restore]. False if a
+     * file couldn't be removed (a copy pushed with adb into a folder the app can't write to).
+     */
+    suspend fun remove(model: LlmModel): Boolean = withContext(Dispatchers.IO) {
+        provisionMutex.withLock {
+            engineHolder.unload()
+            warmedUp.remove(model.id)
+            val removed = (listOf(modelFile(model)) + cacheFiles(model)).all { !it.exists() || it.delete() }
+            choices.gemmaRemovedByUser = removed || choices.gemmaRemovedByUser
+            setStatus(model, if (isProvisioned(model)) ModelStatus.Ready else ModelStatus.NotInstalled)
+            removed
+        }
+    }
+
+    /** Provisions [model] again, after [remove]. */
+    suspend fun restore(model: LlmModel) = withContext(Dispatchers.IO) {
+        choices.gemmaRemovedByUser = false
+        refresh()
+    }
+
     private fun setStatus(model: LlmModel, status: ModelStatus) {
         _statuses.update { it + (model.id to status) }
+        if (model.id == LlmCatalog.default.id) choices.gemmaReady = status == ModelStatus.Ready
         if (status == ModelStatus.Ready) warmUpEngine(model)
     }
 

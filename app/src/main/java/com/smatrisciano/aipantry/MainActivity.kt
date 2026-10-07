@@ -9,8 +9,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
@@ -27,6 +30,7 @@ import com.smatrisciano.aipantry.core.navigation.NavArgument
 import com.smatrisciano.aipantry.core.presentation.theme.AiPantryTheme
 import com.smatrisciano.aipantry.diagnostics.presentation.DiagnosticsActions
 import com.smatrisciano.aipantry.diagnostics.presentation.DiagnosticsScreenRoot
+import com.smatrisciano.aipantry.diagnostics.presentation.VerboseOverlay
 import com.smatrisciano.aipantry.inventory.presentation.InventoryActions
 import com.smatrisciano.aipantry.inventory.presentation.InventoryScreenRoot
 import com.smatrisciano.aipantry.recipes.presentation.RecipeDetailScreenRoot
@@ -55,95 +59,98 @@ class MainActivity : ComponentActivity() {
 private fun AiPantryNavHost() {
     val navController = rememberNavController()
 
-    // Material shared-axis X: the new screen slides in from the side as the old one
-    // drifts away, both fading; reversed when going back
-    NavHost(
-        navController = navController,
-        startDestination = Destination.InventoryRoutes.graphRoot.route,
-        enterTransition = {
-            slideInHorizontally(tween(NAV_ANIMATION_MILLIS)) { it / 5 } + fadeIn(tween(NAV_ANIMATION_MILLIS))
-        },
-        exitTransition = {
-            slideOutHorizontally(tween(NAV_ANIMATION_MILLIS)) { -it / 10 } + fadeOut(tween(NAV_ANIMATION_MILLIS / 2))
-        },
-        popEnterTransition = {
-            slideInHorizontally(tween(NAV_ANIMATION_MILLIS)) { -it / 10 } + fadeIn(tween(NAV_ANIMATION_MILLIS))
-        },
-        popExitTransition = {
-            slideOutHorizontally(tween(NAV_ANIMATION_MILLIS)) { it / 5 } + fadeOut(tween(NAV_ANIMATION_MILLIS / 2))
-        }
-    ) {
-        composable(Destination.InventoryRoutes.graphRoot.route) {
-            InventoryScreenRoot(
-                onNavigation = { navigation ->
-                    when (navigation) {
-                        InventoryActions.Navigation.GoToCapture ->
-                            navController.navigate(Destination.CaptureRoutes.graphRoot.route)
-                        InventoryActions.Navigation.GoToRecipes ->
-                            navController.navigate(Destination.RecipeRoutes.graphRoot.route)
-                        InventoryActions.Navigation.GoToDiagnostics ->
-                            navController.navigate(Destination.DiagnosticsRoutes.graphRoot.route)
-                    }
-                }
-            )
-        }
-
-        composable(Destination.DiagnosticsRoutes.graphRoot.route) {
-            DiagnosticsScreenRoot(
-                onNavigation = { navigation ->
-                    when (navigation) {
-                        DiagnosticsActions.Navigation.GoBack -> navController.popBackStack()
-                    }
-                }
-            )
-        }
-
-        composable(Destination.CaptureRoutes.graphRoot.route) {
-            CaptureScreenRoot(
-                onNavigation = { navigation ->
-                    when (navigation) {
-                        CaptureActions.Navigation.GoBack -> navController.popBackStack()
-                    }
-                }
-            )
-        }
-
-        navigation(
-            route = Destination.RecipeRoutes.graphRoot.route,
-            startDestination = Destination.RecipeRoutes.list.route
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Material shared-axis X: the new screen slides in from the side as the old one
+        // drifts away, both fading; reversed when going back
+        NavHost(
+            navController = navController,
+            startDestination = Destination.InventoryRoutes.graphRoot.route,
+            enterTransition = {
+                slideInHorizontally(tween(NAV_ANIMATION_MILLIS)) { it / 5 } + fadeIn(tween(NAV_ANIMATION_MILLIS))
+            },
+            exitTransition = {
+                slideOutHorizontally(tween(NAV_ANIMATION_MILLIS)) { -it / 10 } + fadeOut(tween(NAV_ANIMATION_MILLIS / 2))
+            },
+            popEnterTransition = {
+                slideInHorizontally(tween(NAV_ANIMATION_MILLIS)) { -it / 10 } + fadeIn(tween(NAV_ANIMATION_MILLIS))
+            },
+            popExitTransition = {
+                slideOutHorizontally(tween(NAV_ANIMATION_MILLIS)) { it / 5 } + fadeOut(tween(NAV_ANIMATION_MILLIS / 2))
+            }
         ) {
-            composable(Destination.RecipeRoutes.list.route) { backStackEntry ->
-                val viewModel: RecipesViewModel = backStackEntry.sharedViewModel(navController)
-                RecipesScreenRoot(
-                    viewModel = viewModel,
+            composable(Destination.InventoryRoutes.graphRoot.route) {
+                InventoryScreenRoot(
                     onNavigation = { navigation ->
                         when (navigation) {
-                            is RecipesActions.Navigation.GoToDetail ->
-                                navController.navigate(
-                                    Destination.RecipeRoutes.detail(navigation.recipeId).route
-                                )
-                            RecipesActions.Navigation.GoBack -> navController.popBackStack()
+                            InventoryActions.Navigation.GoToCapture ->
+                                navController.navigate(Destination.CaptureRoutes.graphRoot.route)
+                            InventoryActions.Navigation.GoToRecipes ->
+                                navController.navigate(Destination.RecipeRoutes.graphRoot.route)
+                            InventoryActions.Navigation.GoToDiagnostics ->
+                                navController.navigate(Destination.DiagnosticsRoutes.graphRoot.route)
                         }
                     }
                 )
             }
 
-            composable(
-                route = Destination.RecipeRoutes.detail.route,
-                arguments = listOf(
-                    navArgument(NavArgument.RecipeId.argument) { type = NavType.IntType }
-                )
-            ) { backStackEntry ->
-                val viewModel: RecipesViewModel = backStackEntry.sharedViewModel(navController)
-                val recipeId =
-                    backStackEntry.arguments?.getInt(NavArgument.RecipeId.argument) ?: 0
-                RecipeDetailScreenRoot(
-                    viewModel = viewModel,
-                    recipeId = recipeId,
-                    onBack = { navController.popBackStack() }
+            composable(Destination.DiagnosticsRoutes.graphRoot.route) {
+                DiagnosticsScreenRoot(
+                    onNavigation = { navigation ->
+                        when (navigation) {
+                            DiagnosticsActions.Navigation.GoBack -> navController.popBackStack()
+                        }
+                    }
                 )
             }
+
+            composable(Destination.CaptureRoutes.graphRoot.route) {
+                CaptureScreenRoot(
+                    onNavigation = { navigation ->
+                        when (navigation) {
+                            CaptureActions.Navigation.GoBack -> navController.popBackStack()
+                        }
+                    }
+                )
+            }
+
+            navigation(
+                route = Destination.RecipeRoutes.graphRoot.route,
+                startDestination = Destination.RecipeRoutes.list.route
+            ) {
+                composable(Destination.RecipeRoutes.list.route) { backStackEntry ->
+                    val viewModel: RecipesViewModel = backStackEntry.sharedViewModel(navController)
+                    RecipesScreenRoot(
+                        viewModel = viewModel,
+                        onNavigation = { navigation ->
+                            when (navigation) {
+                                is RecipesActions.Navigation.GoToDetail ->
+                                    navController.navigate(
+                                        Destination.RecipeRoutes.detail(navigation.recipeId).route
+                                    )
+                                RecipesActions.Navigation.GoBack -> navController.popBackStack()
+                            }
+                        }
+                    )
+                }
+
+                composable(
+                    route = Destination.RecipeRoutes.detail.route,
+                    arguments = listOf(
+                        navArgument(NavArgument.RecipeId.argument) { type = NavType.IntType }
+                    )
+                ) { backStackEntry ->
+                    val viewModel: RecipesViewModel = backStackEntry.sharedViewModel(navController)
+                    val recipeId =
+                        backStackEntry.arguments?.getInt(NavArgument.RecipeId.argument) ?: 0
+                    RecipeDetailScreenRoot(
+                        viewModel = viewModel,
+                        recipeId = recipeId,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+            }
         }
+        VerboseOverlay()
     }
 }
 

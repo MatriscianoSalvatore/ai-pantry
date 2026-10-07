@@ -75,6 +75,10 @@ class ClipZeroShotIngredientDetector(private val context: Context) : IngredientD
         labelSpace.embeddings.map { it.toFloatArray() }.toTypedArray()
     }
 
+    /** What the bundled encoder weighs; null when the build doesn't have it (see scripts/prepare_clip_assets.py). */
+    fun modelSizeBytes(): Long? =
+        runCatching { context.assets.openFd(MODEL_ASSET).use { it.length } }.getOrNull()
+
     // The mapped file is shared: the weights sit in memory only once, even
     // with several interpreters
     private val modelBuffer by lazy {

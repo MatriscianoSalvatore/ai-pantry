@@ -19,7 +19,7 @@ object DetectionPrompt {
                 """
                     This is a photo of the inside of a $place.
                     Identify the food ingredients you can see, at most 15.
-                    Respond with ONLY a JSON array (no markdown, no extra text):
+                    Respond with ONLY a JSON array on a single line (no markdown, no line breaks, no extra text):
                     [{"name": "short ingredient name", "quantity": "approximate quantity like '2 pcs' or '1 carton'"}]
                     Only include items you actually see. Use common English ingredient names.
                 """
@@ -29,7 +29,7 @@ object DetectionPrompt {
                 """
                     Questa è una foto dell'interno di $place.
                     Individua gli ingredienti alimentari che vedi, al massimo 15.
-                    Rispondi SOLO con un array JSON (niente markdown, niente testo extra):
+                    Rispondi SOLO con un array JSON su una sola riga (niente markdown, niente a capo, niente testo extra):
                     [{"name": "nome breve dell'ingrediente", "quantity": "quantità approssimativa, ad esempio '2 pz' o '1 confezione'"}]
                     Includi solo ciò che vedi davvero. Usa nomi di ingredienti comuni in italiano.
                 """

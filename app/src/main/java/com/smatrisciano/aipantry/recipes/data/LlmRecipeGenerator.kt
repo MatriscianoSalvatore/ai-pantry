@@ -23,6 +23,7 @@ import com.smatrisciano.aipantry.recipes.domain.ListUpdate
 import com.smatrisciano.aipantry.recipes.domain.RECIPES_PER_LIST
 import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
+import com.smatrisciano.aipantry.recipes.domain.models.RecipeIngredient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ProducerScope
@@ -266,24 +267,41 @@ class LlmRecipeGenerator(
             Log.d(TAG, "dropped repeated dish: ${tidy.title}")
             return
         }
-        send(ListUpdate.Written(withMissingIngredients(tidy, ingredients)))
+        send(ListUpdate.Written(withMissingIngredients(tidy, ingredients, language)))
     }
 
     /**
      * Missing ingredients aren't decided by the model (unreliable): anything a recipe
-     * uses that isn't in the inventory is, by definition, to buy.
+     * uses that isn't in the inventory is, by definition, to buy. That includes what the
+     * title promises and the model left out of its list ("Spaghetti alle vongole" without
+     * vongole): from the inventory if it has them, otherwise to buy.
      */
-    private fun withMissingIngredients(recipe: Recipe, ingredients: List<Ingredient>): Recipe {
+    private fun withMissingIngredients(recipe: Recipe, ingredients: List<Ingredient>, language: AppLanguage): Recipe {
         val available = ingredients.map { it.name.lowercase() }
-        val (owned, toBuy) = recipe.usedIngredients.partition { used ->
+        val (listedOwned, toBuy) = recipe.usedIngredients.partition { used ->
             val u = normalizeIngredientName(used.name)
             isPantryStaple(u) || available.any { it in u || u in it }
         }
-        val missing = (recipe.missingIngredients + toBuy)
+        val listedMissing = (recipe.missingIngredients + toBuy)
             .filterNot { m -> isPantryStaple(normalizeIngredientName(m.name)) }
             .distinctBy { normalizeIngredientName(it.name) }
+
+        val (owned, missing) = if (language == AppLanguage.IT) {
+            val unlisted = unlistedTitleIngredients(recipe.title, recipe.usedIngredients + recipe.missingIngredients)
+            val (atHome, toGet) = unlisted.partition { TitleIngredients.isCovered(it, ingredients.map { i -> i.name }) }
+            (listedOwned + atHome.map { RecipeIngredient(name = it.replaceFirstChar(Char::titlecase)) }) to
+                (listedMissing + toGet.map { RecipeIngredient(name = it.replaceFirstChar(Char::titlecase)) })
+        } else {
+            listedOwned to listedMissing
+        }
         return recipe.copy(usedIngredients = owned, missingIngredients = missing)
     }
+
+    /** What [title] names that [listed] doesn't have. */
+    private fun unlistedTitleIngredients(title: String, listed: List<RecipeIngredient>): List<String> =
+        TitleIngredients.of(title).filterNot { named ->
+            TitleIngredients.isCovered(named, listed.map { it.name }) || isPantryStaple(named)
+        }
 
     /**
      * The model's answer, a piece at a time: Gemini Nano 4's where the phone has it,

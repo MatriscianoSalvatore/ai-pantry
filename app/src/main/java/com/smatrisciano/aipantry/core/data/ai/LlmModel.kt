@@ -23,6 +23,12 @@ sealed interface ModelSource {
      * because AGP doesn't package single assets >2 GB.
      */
     data class BundledAssets(val assetPaths: List<String>) : ModelSource
+
+    /**
+     * Not delivered by the app (it has no download of its own, and no pack in Play or in the
+     * APK): the file is copied onto the phone with adb. The app only sees whether it is there.
+     */
+    data object Manual : ModelSource
 }
 
 data class LlmModel(
@@ -61,7 +67,22 @@ object LlmCatalog {
         license = "Gemma Terms of Use"
     )
 
-    val all: List<LlmModel> = listOf(gemma4E2B)
+    /**
+     * The bigger Gemma 4, same family and same runtime: slower (about half the speed of E2B on
+     * Google's benchmarks) for better answers. Never delivered by the app: copy the file in
+     * with adb, then pick it on the hidden page.
+     */
+    val gemma4E4B = LlmModel(
+        id = "gemma-4-e4b",
+        displayName = "Gemma 4 E4B",
+        fileName = "gemma4-e4b-it.litertlm",
+        source = ModelSource.Manual,
+        approxSizeBytes = 3_650_000_000,
+        supportsVision = true,
+        license = "Gemma Terms of Use"
+    )
+
+    val all: List<LlmModel> = listOf(gemma4E2B, gemma4E4B)
     val default: LlmModel = gemma4E2B
 
     fun byId(id: String?): LlmModel = all.firstOrNull { it.id == id } ?: default

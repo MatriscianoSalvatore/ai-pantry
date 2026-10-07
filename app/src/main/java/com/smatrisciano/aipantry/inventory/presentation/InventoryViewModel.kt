@@ -3,7 +3,6 @@ package com.smatrisciano.aipantry.inventory.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
-import com.smatrisciano.aipantry.core.data.ai.LlmCatalog
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
 import com.smatrisciano.aipantry.inventory.domain.models.IngredientSource
@@ -25,7 +24,7 @@ class InventoryViewModel(
         modelRepository.statuses,
         nano.available
     ) { ingredients, statuses, nanoWrites ->
-        val activeModel = LlmCatalog.default
+        val activeModel = modelRepository.activeModel()
         val status = statuses[activeModel.id]
         InventoryState(
             isLoaded = true,

@@ -227,14 +227,15 @@
     <string name="diag_choice_nano">Gemini Nano</string>
     <string name="diag_choice_gemma">Gemma 4</string>
     <string name="diag_choice_clip">MobileCLIP</string>
+    <string name="diag_choice_gemma_version">Versione di Gemma</string>
+    <string name="diag_weight_manual_hint">Non la porta l\'app: copia il file con adb in %1$s</string>
     <string name="diag_choice_missing">%1$s · assente</string>
     <string name="diag_verbose">Modalità verbosa</string>
     <string name="diag_verbose_caption">Modello in uso, velocità e temperatura su ogni schermata</string>
     <string name="diag_section_weights">Modelli sul dispositivo</string>
     <string name="diag_weights_caption">Quanto pesa ciascuno e dove sta</string>
-    <string name="diag_weight_gemma">Gemma 4 E2B</string>
     <string name="diag_weight_gemma_removed">Rimosso a mano</string>
-    <string name="diag_weight_gemma_cache">Cache di Gemma</string>
+    <string name="diag_weight_gemma_cache">Cache di %1$s</string>
     <string name="diag_weight_gemma_cache_caption">Scritte accanto al modello; se ne vanno con lui</string>
     <string name="diag_weight_clip">MobileCLIP-S2</string>
     <string name="diag_weight_clip_caption">Nell\'APK: lo toglie solo la disinstallazione</string>
@@ -243,9 +244,9 @@
     <string name="diag_weight_absent">Assente</string>
     <string name="diag_weight_not_in_build">Non in questa build</string>
     <string name="diag_weight_size_unknown">Peso non noto</string>
-    <string name="diag_remove_gemma">Cancella Gemma</string>
-    <string name="diag_restore_gemma">Ripristina Gemma</string>
-    <string name="diag_remove_gemma_title">Cancellare Gemma?</string>
+    <string name="diag_remove_gemma">Cancella %1$s</string>
+    <string name="diag_restore_gemma">Ripristina %1$s</string>
+    <string name="diag_remove_gemma_title">Cancellare %1$s?</string>
     <string name="diag_remove_gemma_body">Libera %1$s. Resta fuori, anche dopo un riavvio, finché non la ripristini: il ripristino la copia di nuovo dai pack di Play o dall\'APK.</string>
     <string name="diag_remove_gemma_confirm">Cancella</string>
 
@@ -262,4 +263,5 @@
     <string name="verbose_idle">Ancora nulla in esecuzione</string>
     <string name="verbose_heat">Batteria %1$s · %2$s · margine %3$s</string>
     <string name="verbose_memory">RAM app %1$s · libera %2$s</string>
+    <string name="diag_retry_gpu">Riprova la GPU</string>
 </resources>

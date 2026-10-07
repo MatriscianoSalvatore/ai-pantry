@@ -36,14 +36,28 @@ class ModelPreferences(context: Context) {
     /** Speed, heat and model in use drawn over every screen. */
     val verbose: StateFlow<Boolean> = _verbose.asStateFlow()
 
-    /** Gemma is on the device and ready, as the model repository last saw it. */
+    /** The Gemma version in use is on the device and ready, as the model repository last saw it. */
     @Volatile
     var gemmaReady: Boolean = false
 
-    /** Gemma was removed by hand: it isn't provisioned again until it is restored. */
-    var gemmaRemovedByUser: Boolean
-        get() = prefs.getBoolean(KEY_GEMMA_REMOVED, false)
-        set(value) = prefs.edit { putBoolean(KEY_GEMMA_REMOVED, value) }
+    private val _activeModelId = MutableStateFlow(prefs.getString(KEY_ACTIVE_MODEL, null) ?: LlmCatalog.default.id)
+
+    /** The Gemma version that writes and looks at photos when Gemma is the one chosen. */
+    val activeModelId: StateFlow<String> = _activeModelId.asStateFlow()
+
+    fun setActiveModelId(id: String) {
+        prefs.edit { putString(KEY_ACTIVE_MODEL, id) }
+        _activeModelId.value = id
+    }
+
+    /** [id] was removed by hand: it isn't provisioned again until it is restored. */
+    fun isRemoved(id: String): Boolean = prefs.getStringSet(KEY_REMOVED, emptySet()).orEmpty().contains(id)
+
+    fun setRemoved(id: String, removed: Boolean) {
+        val now = prefs.getStringSet(KEY_REMOVED, emptySet()).orEmpty().toMutableSet()
+        if (removed) now.add(id) else now.remove(id)
+        prefs.edit { putStringSet(KEY_REMOVED, now) }
+    }
 
     /**
      * What AICore said Gemini Nano weighs, the one time it said so (when the download
@@ -87,7 +101,8 @@ class ModelPreferences(context: Context) {
         const val KEY_VERBOSE = "verbose"
         const val KEY_OVERLAY_X = "overlay_x"
         const val KEY_OVERLAY_Y = "overlay_y"
-        const val KEY_GEMMA_REMOVED = "gemma_removed_by_user"
+        const val KEY_REMOVED = "models_removed_by_user"
+        const val KEY_ACTIVE_MODEL = "active_model"
         const val KEY_NANO_BYTES = "nano_download_bytes"
     }
 }

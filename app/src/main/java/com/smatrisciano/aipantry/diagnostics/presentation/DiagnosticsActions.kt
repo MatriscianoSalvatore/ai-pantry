@@ -9,8 +9,10 @@ sealed interface DiagnosticsActions {
         data class OnScanChoice(val choice: ModelChoice) : Interaction
         data class OnRecipeChoice(val choice: ModelChoice) : Interaction
         data class OnVerboseChange(val on: Boolean) : Interaction
-        data object OnRemoveGemmaClick : Interaction
-        data object OnRestoreGemmaClick : Interaction
+        data class OnGemmaVersion(val id: String) : Interaction
+        data object OnRetryGpuClick : Interaction
+        data class OnRemoveModelClick(val id: String) : Interaction
+        data class OnRestoreModelClick(val id: String) : Interaction
     }
 
     sealed interface Navigation : DiagnosticsActions {

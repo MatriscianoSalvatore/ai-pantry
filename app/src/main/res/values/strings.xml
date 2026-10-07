@@ -228,14 +228,15 @@
     <string name="diag_choice_nano">Gemini Nano</string>
     <string name="diag_choice_gemma">Gemma 4</string>
     <string name="diag_choice_clip">MobileCLIP</string>
+    <string name="diag_choice_gemma_version">Gemma version</string>
+    <string name="diag_weight_manual_hint">Not delivered by the app: copy the file in with adb to %1$s</string>
     <string name="diag_choice_missing">%1$s · not here</string>
     <string name="diag_verbose">Verbose mode</string>
     <string name="diag_verbose_caption">Model in use, speed and heat over every screen</string>
     <string name="diag_section_weights">Models on the device</string>
     <string name="diag_weights_caption">What each one weighs and where it lives</string>
-    <string name="diag_weight_gemma">Gemma 4 E2B</string>
     <string name="diag_weight_gemma_removed">Removed by hand</string>
-    <string name="diag_weight_gemma_cache">Gemma\'s caches</string>
+    <string name="diag_weight_gemma_cache">Caches of %1$s</string>
     <string name="diag_weight_gemma_cache_caption">Written next to the model; go with it</string>
     <string name="diag_weight_clip">MobileCLIP-S2</string>
     <string name="diag_weight_clip_caption">In the APK: only uninstalling removes it</string>
@@ -244,9 +245,9 @@
     <string name="diag_weight_absent">Not here</string>
     <string name="diag_weight_not_in_build">Not in this build</string>
     <string name="diag_weight_size_unknown">Size not known</string>
-    <string name="diag_remove_gemma">Delete Gemma</string>
-    <string name="diag_restore_gemma">Restore Gemma</string>
-    <string name="diag_remove_gemma_title">Delete Gemma?</string>
+    <string name="diag_remove_gemma">Delete %1$s</string>
+    <string name="diag_restore_gemma">Restore %1$s</string>
+    <string name="diag_remove_gemma_title">Delete %1$s?</string>
     <string name="diag_remove_gemma_body">Frees %1$s. It stays off, even after a restart, until you restore it: restoring copies it again from the Play packs or from the APK.</string>
     <string name="diag_remove_gemma_confirm">Delete</string>
 
@@ -263,4 +264,5 @@
     <string name="verbose_idle">Nothing run yet</string>
     <string name="verbose_heat">Battery %1$s · %2$s · headroom %3$s</string>
     <string name="verbose_memory">RAM app %1$s · free %2$s</string>
+    <string name="diag_retry_gpu">Try the GPU again</string>
 </resources>

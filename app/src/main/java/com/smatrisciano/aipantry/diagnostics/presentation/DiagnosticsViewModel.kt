@@ -10,7 +10,11 @@ import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Measure
 import com.smatrisciano.aipantry.core.data.ai.BackgroundAiWork
 import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
+import com.smatrisciano.aipantry.core.data.ai.LlmCatalog
+import com.smatrisciano.aipantry.core.data.ai.ModelChoice
 import com.smatrisciano.aipantry.core.data.ai.ModelPreferences
+import com.smatrisciano.aipantry.core.data.ai.ModelSource
+import com.smatrisciano.aipantry.core.data.ai.ModelStatus
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.diagnostics.data.DeviceMonitor
 import com.smatrisciano.aipantry.diagnostics.data.DeviceSnapshot
@@ -51,14 +55,18 @@ class DiagnosticsViewModel(
     // throttling change by the second while the model works
     private val readings = flow {
         while (true) {
+            // A model copied in with adb while the page is open shows up on the next reading
+            modelRepository.rescanManual()
             emit(Readings(deviceMonitor.snapshot(), modelInfo(), weights(), selection(), learnedWaits()))
             delay(REFRESH_MILLIS)
         }
     }.flowOn(Dispatchers.Default)
 
     // The choices are read live, not with the readings: a tap must show at once
-    private val liveChoices = combine(choices.scan, choices.recipes, choices.verbose) { scan, recipes, verbose ->
-        Triple(scan, recipes, verbose)
+    private class LiveChoices(val scan: ModelChoice, val recipes: ModelChoice, val verbose: Boolean, val gemmaId: String)
+
+    private val liveChoices = combine(choices.scan, choices.recipes, choices.verbose, choices.activeModelId) { scan, recipes, verbose, gemmaId ->
+        LiveChoices(scan, recipes, verbose, gemmaId)
     }
 
     val uiState: StateFlow<DiagnosticsState> = combine(
@@ -67,14 +75,14 @@ class DiagnosticsViewModel(
         recipeRepository.work,
         backgroundAiWork.isAllowed,
         liveChoices
-    ) { readings, cache, work, aheadAllowed, (scan, recipes, verbose) ->
+    ) { readings, cache, work, aheadAllowed, live ->
         DiagnosticsState(
             device = readings.device,
             deviceInfo = deviceMonitor.deviceInfo,
             appVersion = "${BuildConfig.VERSION_NAME} · ${BuildConfig.FLAVOR}",
             model = readings.model,
             weights = readings.weights,
-            selection = readings.selection.copy(scan = scan, recipes = recipes, verbose = verbose),
+            selection = readings.selection.copy(scan = live.scan, recipes = live.recipes, verbose = live.verbose, activeGemmaId = live.gemmaId),
             learned = readings.learned,
             aheadAllowed = aheadAllowed,
             work = work,
@@ -92,11 +100,15 @@ class DiagnosticsViewModel(
                 viewModelScope.launch { nano.isUsable() }
             }
             is Interaction.OnVerboseChange -> choices.setVerbose(action.on)
-            Interaction.OnRemoveGemmaClick -> viewModelScope.launch {
-                modelRepository.remove(modelRepository.activeModel())
+            is Interaction.OnGemmaVersion -> modelRepository.selectActive(action.id)
+            Interaction.OnRetryGpuClick -> engineHolder.resetGpuBroken(modelRepository.activeModel())
+            is Interaction.OnRemoveModelClick -> viewModelScope.launch {
+                modelRepository.remove(LlmCatalog.byId(action.id))
                 nano.isUsable()
             }
-            Interaction.OnRestoreGemmaClick -> viewModelScope.launch { modelRepository.restore(modelRepository.activeModel()) }
+            is Interaction.OnRestoreModelClick -> viewModelScope.launch {
+                modelRepository.restore(LlmCatalog.byId(action.id))
+            }
         }
     }
 
@@ -119,13 +131,22 @@ class DiagnosticsViewModel(
     }
 
     private fun weights(): ModelWeights {
-        val model = modelRepository.activeModel()
-        val file = modelRepository.modelFile(model)
+        val active = modelRepository.activeModel()
         return ModelWeights(
-            gemmaBytes = file.length().takeIf { file.exists() },
-            gemmaCacheBytes = modelRepository.cacheFiles(model).sumOf { it.length() },
-            gemmaStatus = modelRepository.statuses.value[model.id],
-            gemmaRemovedByUser = choices.gemmaRemovedByUser,
+            gemma = LlmCatalog.all.map { model ->
+                val file = modelRepository.modelFile(model)
+                GemmaWeights(
+                    id = model.id,
+                    name = model.displayName,
+                    bytes = file.length().takeIf { file.exists() },
+                    cacheBytes = modelRepository.cacheFiles(model).sumOf { it.length() },
+                    status = modelRepository.statuses.value[model.id],
+                    removedByUser = choices.isRemoved(model.id),
+                    active = model.id == active.id,
+                    manual = model.source == ModelSource.Manual,
+                    installPath = modelRepository.installPath(model)
+                )
+            },
             clipBytes = clip.modelSizeBytes(),
             nanoBytes = choices.nanoDownloadBytes.takeIf { it > 0 },
             nanoPresent = nano.present.value,
@@ -139,7 +160,11 @@ class DiagnosticsViewModel(
         verbose = choices.verbose.value,
         nanoPresent = nano.present.value,
         gemmaReady = modelRepository.readyActiveModel() != null,
-        clipPresent = clip.modelSizeBytes() != null
+        clipPresent = clip.modelSizeBytes() != null,
+        gemmaVersions = LlmCatalog.all.map { model ->
+            GemmaVersion(model.id, model.displayName, modelRepository.statuses.value[model.id] == ModelStatus.Ready)
+        },
+        activeGemmaId = modelRepository.activeModel().id
     )
 
     private fun learnedWaits() = LearnedWaits(

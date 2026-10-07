@@ -103,7 +103,7 @@ private fun DiagnosticsScreen(
     onAction: (DiagnosticsActions) -> Unit
 ) {
     var confirmClear by remember { mutableStateOf(false) }
-    var confirmRemoveGemma by remember { mutableStateOf(false) }
+    var confirmRemove by remember { mutableStateOf<GemmaWeights?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -125,7 +125,14 @@ private fun DiagnosticsScreen(
                 item(key = "memory") { MemorySection(device) }
             }
             state.model?.let { model ->
-                item(key = "model") { ModelSection(model, state.work, state.aheadAllowed) }
+                item(key = "model") {
+                    ModelSection(
+                        model = model,
+                        work = state.work,
+                        aheadAllowed = state.aheadAllowed,
+                        onRetryGpuClick = { onAction(Interaction.OnRetryGpuClick) }
+                    )
+                }
             }
             state.selection?.let { selection ->
                 item(key = "choices") { ChoicesSection(selection, onAction) }
@@ -134,8 +141,8 @@ private fun DiagnosticsScreen(
                 item(key = "weights") {
                     WeightsSection(
                         weights = weights,
-                        onRemoveClick = { confirmRemoveGemma = true },
-                        onRestoreClick = { onAction(Interaction.OnRestoreGemmaClick) }
+                        onRemoveClick = { confirmRemove = it },
+                        onRestoreClick = { onAction(Interaction.OnRestoreModelClick(it)) }
                     )
                 }
             }
@@ -176,23 +183,16 @@ private fun DiagnosticsScreen(
             }
         )
     }
-    if (confirmRemoveGemma) {
+    confirmRemove?.let { model ->
         AlertDialog(
-            onDismissRequest = { confirmRemoveGemma = false },
-            title = { Text(stringResource(R.string.diag_remove_gemma_title)) },
-            text = {
-                Text(
-                    stringResource(
-                        R.string.diag_remove_gemma_body,
-                        bytes((state.weights?.gemmaBytes ?: 0L) + (state.weights?.gemmaCacheBytes ?: 0L))
-                    )
-                )
-            },
+            onDismissRequest = { confirmRemove = null },
+            title = { Text(stringResource(R.string.diag_remove_gemma_title, model.name)) },
+            text = { Text(stringResource(R.string.diag_remove_gemma_body, bytes((model.bytes ?: 0L) + model.cacheBytes))) },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        confirmRemoveGemma = false
-                        onAction(Interaction.OnRemoveGemmaClick)
+                        confirmRemove = null
+                        onAction(Interaction.OnRemoveModelClick(model.id))
                     }
                 ) {
                     Text(
@@ -202,7 +202,7 @@ private fun DiagnosticsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmRemoveGemma = false }) {
+                TextButton(onClick = { confirmRemove = null }) {
                     Text(stringResource(R.string.diag_cancel))
                 }
             }
@@ -364,7 +364,7 @@ private fun MemorySection(device: DeviceSnapshot) {
 }
 
 @Composable
-private fun ModelSection(model: ModelInfo, work: RecipeWork, aheadAllowed: Boolean) {
+private fun ModelSection(model: ModelInfo, work: RecipeWork, aheadAllowed: Boolean, onRetryGpuClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val colors = MaterialTheme.extendedColors
     Section(title = stringResource(R.string.diag_section_model)) {
@@ -417,6 +417,18 @@ private fun ModelSection(model: ModelInfo, work: RecipeWork, aheadAllowed: Boole
             value = stringResource(if (aheadAllowed) R.string.diag_ahead_allowed else R.string.diag_ahead_paused)
         )
     }
+    // Given up on, rightly or wrongly (a race can blame it): one tap and the next load tries it again
+    if (model.gpuDisabled) {
+        Spacer(modifier = Modifier.height(12.dp))
+        FilledTonalButton(
+            onClick = onRetryGpuClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Text(text = stringResource(R.string.diag_retry_gpu), style = MaterialTheme.typography.titleSmall)
+        }
+    }
 }
 
 /** The model each task is given to, and the verbose display. A model that isn't there can't be picked. */
@@ -442,6 +454,14 @@ private fun ChoicesSection(selection: ModelSelection, onAction: (DiagnosticsActi
             selection = selection,
             onSelect = { onAction(Interaction.OnRecipeChoice(it)) }
         )
+        if (selection.gemmaVersions.size > 1) {
+            ChipRow(
+                label = stringResource(R.string.diag_choice_gemma_version),
+                options = selection.gemmaVersions.map { ChipOption(it.id, it.name, it.ready) },
+                selectedId = selection.activeGemmaId,
+                onSelect = { onAction(Interaction.OnGemmaVersion(it)) }
+            )
+        }
         HorizontalDivider(
             modifier = Modifier.padding(start = RowPadding),
             color = MaterialTheme.colorScheme.outlineVariant
@@ -470,7 +490,8 @@ private fun ChoicesSection(selection: ModelSelection, onAction: (DiagnosticsActi
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+private class ChipOption(val id: String, val name: String, val present: Boolean)
+
 @Composable
 private fun ChoiceRow(
     label: String,
@@ -478,6 +499,36 @@ private fun ChoiceRow(
     options: List<ModelChoice>,
     selection: ModelSelection,
     onSelect: (ModelChoice) -> Unit,
+    first: Boolean = false
+) {
+    ChipRow(
+        label = label,
+        options = options.map { option ->
+            ChipOption(
+                id = option.name,
+                name = choiceName(option),
+                present = when (option) {
+                    ModelChoice.AUTO -> true
+                    ModelChoice.NANO -> selection.nanoPresent
+                    ModelChoice.GEMMA -> selection.gemmaReady
+                    ModelChoice.CLIP -> selection.clipPresent
+                }
+            )
+        },
+        selectedId = selected.name,
+        first = first,
+        onSelect = { id -> onSelect(ModelChoice.valueOf(id)) }
+    )
+}
+
+/** A label and the options under it as chips; one that isn't there is greyed, unless it is the one picked. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChipRow(
+    label: String,
+    options: List<ChipOption>,
+    selectedId: String,
+    onSelect: (String) -> Unit,
     first: Boolean = false
 ) {
     if (!first) {
@@ -494,20 +545,13 @@ private fun ChoiceRow(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             options.forEach { option ->
-                val present = when (option) {
-                    ModelChoice.AUTO -> true
-                    ModelChoice.NANO -> selection.nanoPresent
-                    ModelChoice.GEMMA -> selection.gemmaReady
-                    ModelChoice.CLIP -> selection.clipPresent
-                }
-                val name = choiceName(option)
                 FilterChip(
-                    selected = option == selected,
+                    selected = option.id == selectedId,
                     // A choice that isn't there can still be let go of
-                    enabled = present || option == selected,
-                    onClick = { onSelect(option) },
+                    enabled = option.present || option.id == selectedId,
+                    onClick = { onSelect(option.id) },
                     label = {
-                        Text(if (present) name else stringResource(R.string.diag_choice_missing, name))
+                        Text(if (option.present) option.name else stringResource(R.string.diag_choice_missing, option.name))
                     }
                 )
             }
@@ -527,24 +571,34 @@ private fun choiceName(choice: ModelChoice): String = stringResource(
 
 /** What each model weighs and where it lives, with Gemma, the one the app owns, removable. */
 @Composable
-private fun WeightsSection(weights: ModelWeights, onRemoveClick: () -> Unit, onRestoreClick: () -> Unit) {
+private fun WeightsSection(
+    weights: ModelWeights,
+    onRemoveClick: (GemmaWeights) -> Unit,
+    onRestoreClick: (String) -> Unit
+) {
     val scheme = MaterialTheme.colorScheme
     Section(
         title = stringResource(R.string.diag_section_weights),
         caption = stringResource(R.string.diag_weights_caption)
     ) {
-        InfoRow(
-            label = stringResource(R.string.diag_weight_gemma),
-            value = weights.gemmaBytes?.let { bytes(it) } ?: stringResource(R.string.diag_weight_absent),
-            caption = if (weights.gemmaRemovedByUser) stringResource(R.string.diag_weight_gemma_removed) else modelStatusLabel(weights.gemmaStatus),
-            first = true
-        )
-        if (weights.gemmaCacheBytes > 0) {
+        weights.gemma.forEachIndexed { index, model ->
             InfoRow(
-                label = stringResource(R.string.diag_weight_gemma_cache),
-                value = bytes(weights.gemmaCacheBytes),
-                caption = stringResource(R.string.diag_weight_gemma_cache_caption)
+                label = model.name,
+                value = model.bytes?.let { bytes(it) } ?: stringResource(R.string.diag_weight_absent),
+                caption = when {
+                    model.removedByUser -> stringResource(R.string.diag_weight_gemma_removed)
+                    model.bytes == null && model.manual -> stringResource(R.string.diag_weight_manual_hint, model.installPath)
+                    else -> modelStatusLabel(model.status)
+                },
+                first = index == 0
             )
+            if (model.cacheBytes > 0) {
+                InfoRow(
+                    label = stringResource(R.string.diag_weight_gemma_cache, model.name),
+                    value = bytes(model.cacheBytes),
+                    caption = stringResource(R.string.diag_weight_gemma_cache_caption)
+                )
+            }
         }
         InfoRow(
             label = stringResource(R.string.diag_weight_clip),
@@ -561,37 +615,43 @@ private fun WeightsSection(weights: ModelWeights, onRemoveClick: () -> Unit, onR
             ).joinToString(" · ")
         )
     }
-    Spacer(modifier = Modifier.height(16.dp))
-    if (weights.gemmaRemovedByUser) {
-        FilledTonalButton(
-            onClick = onRestoreClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
-            Text(text = stringResource(R.string.diag_restore_gemma), style = MaterialTheme.typography.titleSmall)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onRemoveClick,
-            enabled = weights.gemmaBytes != null,
-            shape = CircleShape,
-            border = BorderStroke(
-                1.dp,
-                if (weights.gemmaBytes != null) scheme.error else scheme.outlineVariant
-            ),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = scheme.error),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.DeleteSweep,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(text = stringResource(R.string.diag_remove_gemma), style = MaterialTheme.typography.titleSmall)
+    weights.gemma.forEach { model ->
+        // Taken off, and one the app can provision again: restore. Otherwise, there: delete
+        if (model.removedByUser && !model.manual) {
+            Spacer(modifier = Modifier.height(12.dp))
+            FilledTonalButton(
+                onClick = { onRestoreClick(model.id) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.diag_restore_gemma, model.name),
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+        } else if (model.bytes != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = { onRemoveClick(model) },
+                shape = CircleShape,
+                border = BorderStroke(1.dp, scheme.error),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = scheme.error),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DeleteSweep,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.diag_remove_gemma, model.name),
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
         }
     }
 }

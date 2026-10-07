@@ -20,17 +20,32 @@ data class ModelInfo(
     val detectorName: String
 )
 
+/** One Gemma version: what it weighs, where it stands, and whether it is the one in use. */
+data class GemmaWeights(
+    val id: String,
+    val name: String,
+    val bytes: Long?,
+    val cacheBytes: Long,
+    val status: ModelStatus?,
+    val removedByUser: Boolean,
+    val active: Boolean,
+    /** Copied in with adb: nothing in the app can bring it back. */
+    val manual: Boolean,
+    /** Where the file goes. */
+    val installPath: String
+)
+
 /** What each model weighs on the device, and whether it is there. Null bytes: not there, or not known. */
 data class ModelWeights(
-    val gemmaBytes: Long?,
-    val gemmaCacheBytes: Long,
-    val gemmaStatus: ModelStatus?,
-    val gemmaRemovedByUser: Boolean,
+    val gemma: List<GemmaWeights>,
     val clipBytes: Long?,
     val nanoBytes: Long?,
     val nanoPresent: Boolean,
     val nanoBaseModel: String?
 )
+
+/** A Gemma version that can be picked, and whether it is on the device. */
+data class GemmaVersion(val id: String, val name: String, val ready: Boolean)
 
 /** The model chosen for each task, and which models can be chosen right now. */
 data class ModelSelection(
@@ -39,7 +54,9 @@ data class ModelSelection(
     val verbose: Boolean,
     val nanoPresent: Boolean,
     val gemmaReady: Boolean,
-    val clipPresent: Boolean
+    val clipPresent: Boolean,
+    val gemmaVersions: List<GemmaVersion>,
+    val activeGemmaId: String
 )
 
 /** What the progress bars measure the model against, as learned on this device. */

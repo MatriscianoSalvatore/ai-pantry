@@ -47,6 +47,7 @@ class LlmEngineHolder(private val context: Context) {
     private var engine: Engine? = null
     private var enginePath: String? = null
     private var engineIsGpu: Boolean = false
+    private var engineModelId: String? = null
 
     @Synchronized
     fun acquire(model: LlmModel, file: File): Engine {
@@ -66,7 +67,8 @@ class LlmEngineHolder(private val context: Context) {
                 }
                 ?: error("Cannot initialize LLM engine for ${model.displayName}")
             enginePath = path
-            Log.i(TAG, "LLM engine ready, gpu=$engineIsGpu")
+            engineModelId = model.id
+            Log.i(TAG, "LLM engine ready for ${model.id}, gpu=$engineIsGpu")
         }
         return requireNotNull(engine)
     }
@@ -80,6 +82,17 @@ class LlmEngineHolder(private val context: Context) {
         engine = null
         enginePath = null
         engineIsGpu = false
+        engineModelId = null
+    }
+
+    /**
+     * Forgets that the GPU was given up on for [model], and takes it out of memory if it is the
+     * one loaded: the next load tries the GPU again. For the times it was blamed wrongly.
+     */
+    @Synchronized
+    fun resetGpuBroken(model: LlmModel) {
+        prefs.edit { remove(gpuBrokenKey(model)) }
+        if (engineModelId == model.id) unload()
     }
 
     /** The model is in memory, ready to answer. */
@@ -236,6 +249,11 @@ class LlmEngineHolder(private val context: Context) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "GPU probe threw", e)
+            // Another model took the engine's place while the probe ran: nothing is known of the GPU
+            if (e is IllegalStateException && e.message?.contains("not initialized") == true) {
+                Log.w(TAG, "GPU probe inconclusive: the engine was replaced meanwhile, not marking the GPU")
+                return
+            }
             false
         }
         if (!ok) {
@@ -267,6 +285,10 @@ class LlmEngineHolder(private val context: Context) {
      */
     @Synchronized
     fun reportGpuUnusable(model: LlmModel): Boolean {
+        if (engineModelId != null && engineModelId != model.id) {
+            Log.w(TAG, "The engine loaded isn't ${model.id}'s: its GPU isn't blamed")
+            return true
+        }
         if (!engineIsGpu) {
             Log.e(TAG, "Output unusable on CPU backend too — giving up")
             return false
@@ -277,6 +299,7 @@ class LlmEngineHolder(private val context: Context) {
         engine = null
         enginePath = null
         engineIsGpu = false
+        engineModelId = null
         return true
     }
 

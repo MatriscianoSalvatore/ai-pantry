@@ -66,17 +66,78 @@ class ModelRepository(
         return File(modelsDir(), model.fileName)
     }
 
-    fun activeModel(): LlmModel = LlmCatalog.default
+    /**
+     * The Gemma version chosen on the hidden page, if it is ready; otherwise the first one that
+     * is, so a version that was removed doesn't leave Gemma out when another is there.
+     */
+    fun activeModel(): LlmModel {
+        fun ready(model: LlmModel) = _statuses.value[model.id] == ModelStatus.Ready
+        return LlmCatalog.byId(choices.activeModelId.value).takeIf(::ready)
+            ?: LlmCatalog.all.firstOrNull(::ready)
+            ?: LlmCatalog.byId(choices.activeModelId.value)
+    }
+
+    /**
+     * The models copied in by hand may arrive (or go) while the app runs: looks again at the
+     * folder. Cheap enough to call every few seconds.
+     */
+    fun rescanManual() {
+        // Not warmed up here: it would swap the engine under an answer being written; it loads when asked
+        val before = settling
+        settling = true
+        try {
+            LlmCatalog.all.filter { it.source == ModelSource.Manual }.forEach { model ->
+                val there = isProvisioned(model)
+                val ready = _statuses.value[model.id] == ModelStatus.Ready
+                if (there && !ready) setStatus(model, ModelStatus.Ready)
+                if (!there && ready) setStatus(model, ModelStatus.NotInstalled)
+            }
+        } finally {
+            settling = before
+        }
+    }
+
+    /** Gemma runs the version [id] from now on: it is loaded when it is next asked. */
+    fun selectActive(id: String) {
+        choices.setActiveModelId(id)
+        syncGemmaReady()
+        val model = activeModel()
+        if (_statuses.value[model.id] == ModelStatus.Ready) warmUpEngine(model)
+    }
+
+    /** Where [model] goes when it is copied in with adb: the folder the app can write caches in. */
+    fun installPath(model: LlmModel): String = File(modelsDir(), model.fileName).absolutePath
+
+    private fun syncGemmaReady() {
+        choices.gemmaReady = _statuses.value[activeModel().id] == ModelStatus.Ready
+    }
 
     /** The active model, only if ready to use. */
     fun readyActiveModel(): LlmModel? =
         activeModel().takeIf { _statuses.value[it.id] == ModelStatus.Ready }
 
+    // While the models' states are being worked out, nothing is warmed up: which one is in use
+    // isn't known until they all are, and two warm-ups at once have each close the other's engine
+    @Volatile
+    private var settling = false
+
     private suspend fun refresh() {
+        settling = true
+        try {
+            refreshAll()
+        } finally {
+            settling = false
+        }
+        readyActive()?.let { warmUpEngine(it) }
+    }
+
+    private fun readyActive(): LlmModel? = activeModel().takeIf { _statuses.value[it.id] == ModelStatus.Ready }
+
+    private suspend fun refreshAll() {
         cleanupOrphanedFiles()
         LlmCatalog.all.forEach { model ->
             // Taken off by hand: it stays off until it is restored
-            if (choices.gemmaRemovedByUser && !isProvisioned(model)) {
+            if (choices.isRemoved(model.id) && !isProvisioned(model)) {
                 setStatus(model, ModelStatus.NotInstalled)
                 return@forEach
             }
@@ -88,6 +149,8 @@ class ModelRepository(
                 // Zero-touch: the embedded model prepares itself on first launch
                 is ModelSource.BundledAssets -> provisionBundled(model, source)
                 is ModelSource.AiPacks -> refreshAiPacks(model, source)
+                // Copied in by hand: it is there or it isn't
+                ModelSource.Manual -> setStatus(model, ModelStatus.NotInstalled)
             }
         }
     }
@@ -289,7 +352,7 @@ class ModelRepository(
             engineHolder.unload()
             warmedUp.remove(model.id)
             val removed = (listOf(modelFile(model)) + cacheFiles(model)).all { !it.exists() || it.delete() }
-            choices.gemmaRemovedByUser = removed || choices.gemmaRemovedByUser
+            if (removed) choices.setRemoved(model.id, true)
             setStatus(model, if (isProvisioned(model)) ModelStatus.Ready else ModelStatus.NotInstalled)
             removed
         }
@@ -297,14 +360,16 @@ class ModelRepository(
 
     /** Provisions [model] again, after [remove]. */
     suspend fun restore(model: LlmModel) = withContext(Dispatchers.IO) {
-        choices.gemmaRemovedByUser = false
+        choices.setRemoved(model.id, false)
         refresh()
     }
 
     private fun setStatus(model: LlmModel, status: ModelStatus) {
         _statuses.update { it + (model.id to status) }
-        if (model.id == LlmCatalog.default.id) choices.gemmaReady = status == ModelStatus.Ready
-        if (status == ModelStatus.Ready) warmUpEngine(model)
+        syncGemmaReady()
+        // Only the version in use: the engine holds one model, and warming up two at once has
+        // each close the other's engine under it
+        if (!settling && status == ModelStatus.Ready && model.id == activeModel().id) warmUpEngine(model)
     }
 
     /**

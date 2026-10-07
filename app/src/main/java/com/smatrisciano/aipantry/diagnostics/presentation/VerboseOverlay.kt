@@ -1,6 +1,7 @@
 package com.smatrisciano.aipantry.diagnostics.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -97,6 +98,21 @@ fun VerboseOverlay(viewModel: VerboseViewModel = koinViewModel()) {
             val runs = tasks.mapNotNull { state.runs[it] }
             if (runs.isEmpty()) Line(stringResource(R.string.verbose_idle), dim = true)
             runs.forEach { run -> RunLines(run, state.nowMillis) }
+
+            // Only for what the stop can reach: the recipes being written, not a scan
+            if (runs.any { it.running && it.task != InferenceTask.SCAN }) {
+                Text(
+                    text = stringResource(R.string.verbose_stop),
+                    color = Color.White,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFB3261E))
+                        .clickable { viewModel.stop() }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
 
             state.device?.let { device ->
                 val battery = device.batteryTemperatureCelsius?.let { "%.1f °C".format(it) } ?: "—"

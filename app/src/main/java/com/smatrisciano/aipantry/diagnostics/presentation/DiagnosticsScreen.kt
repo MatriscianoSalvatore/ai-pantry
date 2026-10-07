@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.R
+import com.smatrisciano.aipantry.core.data.ai.BackendChoice
 import com.smatrisciano.aipantry.core.data.ai.ModelChoice
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
 import com.smatrisciano.aipantry.core.presentation.theme.extendedColors
@@ -130,7 +131,8 @@ private fun DiagnosticsScreen(
                         model = model,
                         work = state.work,
                         aheadAllowed = state.aheadAllowed,
-                        onRetryGpuClick = { onAction(Interaction.OnRetryGpuClick) }
+                        onRetryGpuClick = { onAction(Interaction.OnRetryGpuClick) },
+                        onStopClick = { onAction(Interaction.OnStopClick) }
                     )
                 }
             }
@@ -364,7 +366,13 @@ private fun MemorySection(device: DeviceSnapshot) {
 }
 
 @Composable
-private fun ModelSection(model: ModelInfo, work: RecipeWork, aheadAllowed: Boolean, onRetryGpuClick: () -> Unit) {
+private fun ModelSection(
+    model: ModelInfo,
+    work: RecipeWork,
+    aheadAllowed: Boolean,
+    onRetryGpuClick: () -> Unit,
+    onStopClick: () -> Unit
+) {
     val scheme = MaterialTheme.colorScheme
     val colors = MaterialTheme.extendedColors
     Section(title = stringResource(R.string.diag_section_model)) {
@@ -417,6 +425,21 @@ private fun ModelSection(model: ModelInfo, work: RecipeWork, aheadAllowed: Boole
             value = stringResource(if (aheadAllowed) R.string.diag_ahead_allowed else R.string.diag_ahead_paused)
         )
     }
+    // What the model is writing can be stopped from here, from any screen it is running on
+    if (work != RecipeWork.Idle) {
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = onStopClick,
+            shape = CircleShape,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Text(text = stringResource(R.string.diag_stop_generation), style = MaterialTheme.typography.titleSmall)
+        }
+    }
     // Given up on, rightly or wrongly (a race can blame it): one tap and the next load tries it again
     if (model.gpuDisabled) {
         Spacer(modifier = Modifier.height(12.dp))
@@ -462,6 +485,16 @@ private fun ChoicesSection(selection: ModelSelection, onAction: (DiagnosticsActi
                 onSelect = { onAction(Interaction.OnGemmaVersion(it)) }
             )
         }
+        ChipRow(
+            label = stringResource(R.string.diag_choice_backend, selection.activeGemmaName),
+            options = listOf(
+                ChipOption(BackendChoice.AUTO.name, stringResource(R.string.diag_choice_auto), true),
+                ChipOption(BackendChoice.GPU.name, stringResource(R.string.diag_backend_gpu), true),
+                ChipOption(BackendChoice.CPU.name, stringResource(R.string.diag_backend_cpu), true)
+            ),
+            selectedId = selection.backend.name,
+            onSelect = { onAction(Interaction.OnBackendChoice(BackendChoice.valueOf(it))) }
+        )
         HorizontalDivider(
             modifier = Modifier.padding(start = RowPadding),
             color = MaterialTheme.colorScheme.outlineVariant

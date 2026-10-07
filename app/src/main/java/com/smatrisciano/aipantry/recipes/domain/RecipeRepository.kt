@@ -109,6 +109,12 @@ interface RecipeRepository {
 
     val work: Flow<RecipeWork>
 
+    /**
+     * Stops what the model is writing right now: a list keeps the recipes it had, details can be
+     * retried. Nothing is written ahead of time either until the user does something again.
+     */
+    fun stopGeneration()
+
     /** Forgets every list and its details: the next list for any inventory is its first again. */
     fun clearCache()
 

@@ -5,8 +5,10 @@ import android.util.Log
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Measure
 import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
+import com.smatrisciano.aipantry.core.data.ai.GenerationControl
 import com.smatrisciano.aipantry.core.data.ai.InferenceStats
 import com.smatrisciano.aipantry.core.data.ai.InferenceTask
+import com.smatrisciano.aipantry.core.data.ai.StoppedByUserException
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.LlmModel
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
@@ -49,7 +51,8 @@ class LlmRecipeGenerator(
     private val engineHolder: LlmEngineHolder,
     private val nano: GeminiNanoWriter,
     private val waitTimes: WaitTimeEstimator,
-    private val stats: InferenceStats
+    private val stats: InferenceStats,
+    private val control: GenerationControl
 ) : RecipeGenerator {
 
     override val engineName: String
@@ -94,6 +97,9 @@ class LlmRecipeGenerator(
                 lastError = IllegalStateException("Only ${dishes.added} new sound recipes")
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: StoppedByUserException) {
+                // Stopped by hand: no new attempt, and Nano or the GPU aren't to blame
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "LLM attempt ${attempt + 1}/$MAX_ATTEMPTS failed", e)
                 onFailedAttempt(e)
@@ -115,6 +121,9 @@ class LlmRecipeGenerator(
                 send(DetailsUpdate.Written(details, writing = null))
                 return@channelFlow
             } catch (e: CancellationException) {
+                throw e
+            } catch (e: StoppedByUserException) {
+                // Stopped by hand: no new attempt, and Nano or the GPU aren't to blame
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "LLM attempt ${attempt + 1}/$MAX_ATTEMPTS failed", e)
@@ -314,7 +323,8 @@ class LlmRecipeGenerator(
 
     /** What comes out of the model is counted and timed for the verbose display. */
     private fun Flow<String>.timed(run: InferenceStats.Run): Flow<String> =
-        onEach { run.output(it.length) }
+        control.stoppable(this)
+            .onEach { run.output(it.length) }
             .onCompletion { cause -> run.finish(failed = cause != null && cause !is CancellationException) }
 
     /** Garbage tokens (<pad>, <unused…>) in the answer: see [onFailedAttempt]. */

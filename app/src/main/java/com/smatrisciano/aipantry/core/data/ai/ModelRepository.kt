@@ -97,6 +97,18 @@ class ModelRepository(
         }
     }
 
+    /**
+     * Loads the version in use again, for the backend picked by hand to take effect: it is taken out of
+     * memory once nothing is being written with it, and warmed up with the new backend.
+     */
+    suspend fun reloadActive() {
+        val model = activeModel()
+        engineHolder.clearSessionFailure(model)
+        engineHolder.unloadWhenIdle()
+        warmedUp.remove(model.id)
+        if (_statuses.value[model.id] == ModelStatus.Ready) warmUpEngine(model)
+    }
+
     /** Gemma runs the version [id] from now on: it is loaded when it is next asked. */
     fun selectActive(id: String) {
         choices.setActiveModelId(id)

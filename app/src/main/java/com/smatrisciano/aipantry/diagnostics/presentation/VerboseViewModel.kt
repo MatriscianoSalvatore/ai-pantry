@@ -9,6 +9,7 @@ import com.smatrisciano.aipantry.core.data.ai.InferenceTask
 import com.smatrisciano.aipantry.core.data.ai.ModelPreferences
 import com.smatrisciano.aipantry.diagnostics.data.DeviceMonitor
 import com.smatrisciano.aipantry.diagnostics.data.DeviceSnapshot
+import com.smatrisciano.aipantry.recipes.domain.RecipeRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -35,8 +36,13 @@ data class VerboseState(
 class VerboseViewModel(
     private val choices: ModelPreferences,
     stats: InferenceStats,
-    deviceMonitor: DeviceMonitor
+    deviceMonitor: DeviceMonitor,
+    private val recipes: RecipeRepository
 ) : ViewModel() {
+
+    /** The stop button: ends what the model is writing. */
+    fun stop() = recipes.stopGeneration()
+
 
     private val device = flow {
         while (true) {

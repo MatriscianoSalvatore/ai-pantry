@@ -5,6 +5,7 @@ import com.google.android.play.core.aipacks.AiPackManagerFactory
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
 import com.smatrisciano.aipantry.core.data.ai.BackgroundAiWork
 import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
+import com.smatrisciano.aipantry.core.data.ai.GenerationControl
 import com.smatrisciano.aipantry.core.data.ai.InferenceStats
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.ModelPreferences
@@ -28,7 +29,8 @@ val coreModule = module {
 
     single { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
     single { AiPackManagerFactory.getInstance(androidContext()) }
-    single { LlmEngineHolder(androidContext()) }
+    single { LlmEngineHolder(androidContext(), get()) }
+    single { GenerationControl() }
     single { ModelPreferences(androidContext()) }
     single { InferenceStats() }
     single { GeminiNanoWriter(get()) }

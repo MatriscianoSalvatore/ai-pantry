@@ -50,7 +50,18 @@ class AdaptiveIngredientDetector(
 
     /** Only the detector the next scan is going to use. */
     override suspend fun warmUp() {
-        candidates().first().warmUp()
+        val first = candidates().first()
+        makeRoomFor(first)
+        first.warmUp()
+    }
+
+    /**
+     * A scan with another model than Gemma doesn't leave Gemma in memory: a big one (E4B with
+     * its caches is some 6 GB) next to the scan has Android close the app. It loads again when
+     * the recipes need it.
+     */
+    private suspend fun makeRoomFor(detector: IngredientDetector) {
+        if (detector !== gemma) engineHolder.unloadWhenIdle()
     }
 
     override suspend fun detect(
@@ -62,6 +73,7 @@ class AdaptiveIngredientDetector(
         var lastError: Exception? = null
         for ((index, detector) in candidates.withIndex()) {
             lastUsed = detector
+            makeRoomFor(detector)
             val run = stats.begin(InferenceTask.SCAN, detector.engineName, backendOf(detector))
             try {
                 return detector.detect(bitmap, target, onProgress).also { run.items(it.size); run.finish() }

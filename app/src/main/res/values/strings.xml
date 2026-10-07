@@ -265,4 +265,9 @@
     <string name="verbose_heat">Battery %1$s · %2$s · headroom %3$s</string>
     <string name="verbose_memory">RAM app %1$s · free %2$s</string>
     <string name="diag_retry_gpu">Try the GPU again</string>
+    <string name="diag_choice_backend">Where %1$s runs</string>
+    <string name="diag_backend_gpu">GPU</string>
+    <string name="diag_backend_cpu">CPU</string>
+    <string name="diag_stop_generation">Stop the generation</string>
+    <string name="verbose_stop">■ Stop</string>
 </resources>

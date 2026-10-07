@@ -1,5 +1,6 @@
 package com.smatrisciano.aipantry.diagnostics.presentation
 
+import com.smatrisciano.aipantry.core.data.ai.BackendChoice
 import com.smatrisciano.aipantry.core.data.ai.ModelChoice
 
 sealed interface DiagnosticsActions {
@@ -11,6 +12,8 @@ sealed interface DiagnosticsActions {
         data class OnVerboseChange(val on: Boolean) : Interaction
         data class OnGemmaVersion(val id: String) : Interaction
         data object OnRetryGpuClick : Interaction
+        data class OnBackendChoice(val choice: BackendChoice) : Interaction
+        data object OnStopClick : Interaction
         data class OnRemoveModelClick(val id: String) : Interaction
         data class OnRestoreModelClick(val id: String) : Interaction
     }

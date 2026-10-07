@@ -1,5 +1,6 @@
 package com.smatrisciano.aipantry.diagnostics.presentation
 
+import com.smatrisciano.aipantry.core.data.ai.BackendChoice
 import com.smatrisciano.aipantry.core.data.ai.ModelChoice
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
 import com.smatrisciano.aipantry.diagnostics.data.DeviceInfo
@@ -56,7 +57,10 @@ data class ModelSelection(
     val gemmaReady: Boolean,
     val clipPresent: Boolean,
     val gemmaVersions: List<GemmaVersion>,
-    val activeGemmaId: String
+    val activeGemmaId: String,
+    val activeGemmaName: String,
+    /** Where the Gemma version in use runs. */
+    val backend: BackendChoice
 )
 
 /** What the progress bars measure the model against, as learned on this device. */

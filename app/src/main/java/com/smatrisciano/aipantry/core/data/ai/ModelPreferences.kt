@@ -13,6 +13,13 @@ import kotlinx.coroutines.flow.asStateFlow
 enum class ModelChoice { AUTO, NANO, GEMMA, CLIP }
 
 /**
+ * Where a Gemma version runs. [AUTO] tries the GPU and falls back to the CPU for good if it
+ * fails; [GPU] and [CPU] are what the user picked by hand (a GPU that fails still falls back to
+ * the CPU for the rest of the session, without being written off).
+ */
+enum class BackendChoice { AUTO, GPU, CPU }
+
+/**
  * What the hidden page lets you decide: the model for each task, the verbose display, and
  * what the app has to remember about the models (Gemma taken off by hand, the size AICore
  * said Nano has). Kept in the app's own preferences.
@@ -76,6 +83,22 @@ class ModelPreferences(context: Context) {
         get() = prefs.getFloat(KEY_OVERLAY_Y, 0f)
         set(value) = prefs.edit { putFloat(KEY_OVERLAY_Y, value) }
 
+    private val _backends = MutableStateFlow(LlmCatalog.all.associate { it.id to readBackend(it.id) })
+
+    /** Where each Gemma version runs, by model id. */
+    val backends: StateFlow<Map<String, BackendChoice>> = _backends.asStateFlow()
+
+    fun backendFor(modelId: String): BackendChoice = _backends.value[modelId] ?: BackendChoice.AUTO
+
+    fun setBackend(modelId: String, choice: BackendChoice) {
+        prefs.edit { putString("$KEY_BACKEND_PREFIX$modelId", choice.name) }
+        _backends.value = _backends.value + (modelId to choice)
+    }
+
+    private fun readBackend(modelId: String): BackendChoice =
+        runCatching { BackendChoice.valueOf(prefs.getString("$KEY_BACKEND_PREFIX$modelId", null).orEmpty()) }
+            .getOrDefault(BackendChoice.AUTO)
+
     fun setScan(choice: ModelChoice) {
         prefs.edit { putString(KEY_SCAN, choice.name) }
         _scan.value = choice
@@ -97,6 +120,7 @@ class ModelPreferences(context: Context) {
 
     private companion object {
         const val KEY_SCAN = "scan"
+        const val KEY_BACKEND_PREFIX = "backend_"
         const val KEY_RECIPES = "recipes"
         const val KEY_VERBOSE = "verbose"
         const val KEY_OVERLAY_X = "overlay_x"

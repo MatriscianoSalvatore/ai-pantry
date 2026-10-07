@@ -10,6 +10,7 @@ import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Measure
 import com.smatrisciano.aipantry.core.data.ai.BackgroundAiWork
 import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
+import com.smatrisciano.aipantry.core.data.ai.BackendChoice
 import com.smatrisciano.aipantry.core.data.ai.LlmCatalog
 import com.smatrisciano.aipantry.core.data.ai.ModelChoice
 import com.smatrisciano.aipantry.core.data.ai.ModelPreferences
@@ -63,10 +64,18 @@ class DiagnosticsViewModel(
     }.flowOn(Dispatchers.Default)
 
     // The choices are read live, not with the readings: a tap must show at once
-    private class LiveChoices(val scan: ModelChoice, val recipes: ModelChoice, val verbose: Boolean, val gemmaId: String)
+    private class LiveChoices(
+        val scan: ModelChoice,
+        val recipes: ModelChoice,
+        val verbose: Boolean,
+        val gemmaId: String,
+        val backends: Map<String, BackendChoice>
+    )
 
-    private val liveChoices = combine(choices.scan, choices.recipes, choices.verbose, choices.activeModelId) { scan, recipes, verbose, gemmaId ->
-        LiveChoices(scan, recipes, verbose, gemmaId)
+    private val liveChoices = combine(
+        choices.scan, choices.recipes, choices.verbose, choices.activeModelId, choices.backends
+    ) { scan, recipes, verbose, gemmaId, backends ->
+        LiveChoices(scan, recipes, verbose, gemmaId, backends)
     }
 
     val uiState: StateFlow<DiagnosticsState> = combine(
@@ -82,7 +91,13 @@ class DiagnosticsViewModel(
             appVersion = "${BuildConfig.VERSION_NAME} · ${BuildConfig.FLAVOR}",
             model = readings.model,
             weights = readings.weights,
-            selection = readings.selection.copy(scan = live.scan, recipes = live.recipes, verbose = live.verbose, activeGemmaId = live.gemmaId),
+            selection = readings.selection.copy(
+                scan = live.scan,
+                recipes = live.recipes,
+                verbose = live.verbose,
+                activeGemmaId = live.gemmaId,
+                backend = live.backends[live.gemmaId] ?: BackendChoice.AUTO
+            ),
             learned = readings.learned,
             aheadAllowed = aheadAllowed,
             work = work,
@@ -101,6 +116,11 @@ class DiagnosticsViewModel(
             }
             is Interaction.OnVerboseChange -> choices.setVerbose(action.on)
             is Interaction.OnGemmaVersion -> modelRepository.selectActive(action.id)
+            is Interaction.OnBackendChoice -> {
+                choices.setBackend(modelRepository.activeModel().id, action.choice)
+                viewModelScope.launch { modelRepository.reloadActive() }
+            }
+            Interaction.OnStopClick -> recipeRepository.stopGeneration()
             Interaction.OnRetryGpuClick -> engineHolder.resetGpuBroken(modelRepository.activeModel())
             is Interaction.OnRemoveModelClick -> viewModelScope.launch {
                 modelRepository.remove(LlmCatalog.byId(action.id))
@@ -164,7 +184,9 @@ class DiagnosticsViewModel(
         gemmaVersions = LlmCatalog.all.map { model ->
             GemmaVersion(model.id, model.displayName, modelRepository.statuses.value[model.id] == ModelStatus.Ready)
         },
-        activeGemmaId = modelRepository.activeModel().id
+        activeGemmaId = modelRepository.activeModel().id,
+        activeGemmaName = modelRepository.activeModel().displayName,
+        backend = choices.backendFor(modelRepository.activeModel().id)
     )
 
     private fun learnedWaits() = LearnedWaits(

@@ -12,6 +12,8 @@ import com.smatrisciano.aipantry.capture.domain.DetectedIngredient
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
 import com.smatrisciano.aipantry.capture.domain.ScanProgress
 import com.smatrisciano.aipantry.capture.domain.ScanTarget
+import com.smatrisciano.aipantry.core.data.ai.ModelPreferences
+import com.smatrisciano.aipantry.core.data.ai.featureStatusName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * (e.g. Pixel 9 and later) and never on the emulator: check availability with
  * [isUsable] before calling [detect], otherwise the fallback detector is used.
  */
-class NanoIngredientDetector : IngredientDetector {
+class NanoIngredientDetector(private val choices: ModelPreferences) : IngredientDetector {
 
     override val engineName: String = "Gemini Nano · AICore"
 
@@ -39,15 +41,24 @@ class NanoIngredientDetector : IngredientDetector {
      * unsupported devices) this returns false and the caller uses the fallback.
      */
     suspend fun isUsable(): Boolean = runCatching {
-        when (model.checkStatus()) {
+        val status = model.checkStatus()
+        Log.i(TAG, "AICore feature status: ${status.featureStatusName()}")
+        when (status) {
             FeatureStatus.AVAILABLE -> true
             FeatureStatus.DOWNLOADABLE -> {
                 if (downloadRequested.compareAndSet(false, true)) {
                     downloadScope.launch {
                         runCatching {
                             model.download().collect { status ->
-                                if (status is DownloadStatus.DownloadFailed) {
-                                    Log.w(TAG, "Nano model download failed")
+                                when (status) {
+                                    is DownloadStatus.DownloadStarted -> {
+                                        // The only time AICore says what the model weighs
+                                        choices.nanoDownloadBytes = status.bytesToDownload
+                                        Log.i(TAG, "Nano model download: $status")
+                                    }
+                                    is DownloadStatus.DownloadFailed -> Log.w(TAG, "Nano model download failed")
+                                    is DownloadStatus.DownloadCompleted -> Log.i(TAG, "Nano model download completed")
+                                    else -> Unit
                                 }
                             }
                         }
@@ -72,10 +83,13 @@ class NanoIngredientDetector : IngredientDetector {
             generateContentRequest(ImagePart(bitmap.downscaled()), TextPart(DetectionPrompt.build(target))) {
                 temperature = 0.2f
                 candidateCount = 1
+                maxOutputTokens = MAX_OUTPUT_TOKENS
             }
         )
-        val rawOutput = response.candidates.firstOrNull()?.text
+        val candidate = response.candidates.firstOrNull()
             ?: error("Gemini Nano returned no candidates")
+        val rawOutput = candidate.text
+        Log.i(TAG, "Nano output (${candidate.finishReason}, ${rawOutput.length} chars): ${rawOutput.take(600)}")
         return DetectionJsonParser.parse(rawOutput)
     }
 
@@ -90,5 +104,10 @@ class NanoIngredientDetector : IngredientDetector {
 
     private companion object {
         const val TAG = "NanoDetector"
+
+        // The most the Prompt API accepts (1..256 as of genai-prompt 1.0.0-beta2): also its
+        // default, which cut a pretty-printed list short. The prompt asks for a compact one-line
+        // array to fit as many items as possible, and the parser keeps those complete
+        const val MAX_OUTPUT_TOKENS = 256
     }
 }

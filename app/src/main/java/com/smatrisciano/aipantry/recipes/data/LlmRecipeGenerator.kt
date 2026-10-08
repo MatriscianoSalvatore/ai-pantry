@@ -5,6 +5,10 @@ import android.util.Log
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Measure
 import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
+import com.smatrisciano.aipantry.core.data.ai.GenerationControl
+import com.smatrisciano.aipantry.core.data.ai.InferenceStats
+import com.smatrisciano.aipantry.core.data.ai.InferenceTask
+import com.smatrisciano.aipantry.core.data.ai.StoppedByUserException
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.LlmModel
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
@@ -19,6 +23,7 @@ import com.smatrisciano.aipantry.recipes.domain.ListUpdate
 import com.smatrisciano.aipantry.recipes.domain.RECIPES_PER_LIST
 import com.smatrisciano.aipantry.recipes.domain.RecipeGenerator
 import com.smatrisciano.aipantry.recipes.domain.models.Recipe
+import com.smatrisciano.aipantry.recipes.domain.models.RecipeIngredient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ProducerScope
@@ -28,6 +33,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 import kotlin.math.exp
@@ -44,7 +51,9 @@ class LlmRecipeGenerator(
     private val modelRepository: ModelRepository,
     private val engineHolder: LlmEngineHolder,
     private val nano: GeminiNanoWriter,
-    private val waitTimes: WaitTimeEstimator
+    private val waitTimes: WaitTimeEstimator,
+    private val stats: InferenceStats,
+    private val control: GenerationControl
 ) : RecipeGenerator {
 
     override val engineName: String
@@ -89,6 +98,9 @@ class LlmRecipeGenerator(
                 lastError = IllegalStateException("Only ${dishes.added} new sound recipes")
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: StoppedByUserException) {
+                // Stopped by hand: no new attempt, and Nano or the GPU aren't to blame
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "LLM attempt ${attempt + 1}/$MAX_ATTEMPTS failed", e)
                 onFailedAttempt(e)
@@ -110,6 +122,9 @@ class LlmRecipeGenerator(
                 send(DetailsUpdate.Written(details, writing = null))
                 return@channelFlow
             } catch (e: CancellationException) {
+                throw e
+            } catch (e: StoppedByUserException) {
+                // Stopped by hand: no new attempt, and Nano or the GPU aren't to blame
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "LLM attempt ${attempt + 1}/$MAX_ATTEMPTS failed", e)
@@ -154,7 +169,7 @@ class LlmRecipeGenerator(
                     delay(PROGRESS_TICK_MILLIS)
                 }
             }
-            answer(prompt, seed)
+            answer(prompt, seed, InferenceTask.RECIPE_LIST)
                 // An attempt that only tops up the round is done as soon as the round is full
                 .takeWhile { !dishes.isFull }
                 .collect { piece ->
@@ -209,7 +224,7 @@ class LlmRecipeGenerator(
                     delay(PROGRESS_TICK_MILLIS)
                 }
             }
-            answer(prompt, seed).collect { piece ->
+            answer(prompt, seed, InferenceTask.RECIPE_DETAILS).collect { piece ->
                 if (output.isEmpty()) {
                     reading.cancel()
                     waitTimes.record(Measure.PROMPT_READING_MILLIS, progress.elapsedMillis)
@@ -252,24 +267,41 @@ class LlmRecipeGenerator(
             Log.d(TAG, "dropped repeated dish: ${tidy.title}")
             return
         }
-        send(ListUpdate.Written(withMissingIngredients(tidy, ingredients)))
+        send(ListUpdate.Written(withMissingIngredients(tidy, ingredients, language)))
     }
 
     /**
      * Missing ingredients aren't decided by the model (unreliable): anything a recipe
-     * uses that isn't in the inventory is, by definition, to buy.
+     * uses that isn't in the inventory is, by definition, to buy. That includes what the
+     * title promises and the model left out of its list ("Spaghetti alle vongole" without
+     * vongole): from the inventory if it has them, otherwise to buy.
      */
-    private fun withMissingIngredients(recipe: Recipe, ingredients: List<Ingredient>): Recipe {
+    private fun withMissingIngredients(recipe: Recipe, ingredients: List<Ingredient>, language: AppLanguage): Recipe {
         val available = ingredients.map { it.name.lowercase() }
-        val (owned, toBuy) = recipe.usedIngredients.partition { used ->
+        val (listedOwned, toBuy) = recipe.usedIngredients.partition { used ->
             val u = normalizeIngredientName(used.name)
             isPantryStaple(u) || available.any { it in u || u in it }
         }
-        val missing = (recipe.missingIngredients + toBuy)
+        val listedMissing = (recipe.missingIngredients + toBuy)
             .filterNot { m -> isPantryStaple(normalizeIngredientName(m.name)) }
             .distinctBy { normalizeIngredientName(it.name) }
+
+        val (owned, missing) = if (language == AppLanguage.IT) {
+            val unlisted = unlistedTitleIngredients(recipe.title, recipe.usedIngredients + recipe.missingIngredients)
+            val (atHome, toGet) = unlisted.partition { TitleIngredients.isCovered(it, ingredients.map { i -> i.name }) }
+            (listedOwned + atHome.map { RecipeIngredient(name = it.replaceFirstChar(Char::titlecase)) }) to
+                (listedMissing + toGet.map { RecipeIngredient(name = it.replaceFirstChar(Char::titlecase)) })
+        } else {
+            listedOwned to listedMissing
+        }
         return recipe.copy(usedIngredients = owned, missingIngredients = missing)
     }
+
+    /** What [title] names that [listed] doesn't have. */
+    private fun unlistedTitleIngredients(title: String, listed: List<RecipeIngredient>): List<String> =
+        TitleIngredients.of(title).filterNot { named ->
+            TitleIngredients.isCovered(named, listed.map { it.name }) || isPantryStaple(named)
+        }
 
     /**
      * The model's answer, a piece at a time: Gemini Nano 4's where the phone has it,
@@ -278,13 +310,19 @@ class LlmRecipeGenerator(
      * is the GPU's: see [onFailedAttempt]. The CPU never hangs, it's just slow, so there
      * an answer takes as long as it needs.
      */
-    private suspend fun answer(prompt: String, seed: Int): Flow<String> {
+    private suspend fun answer(prompt: String, seed: Int, task: InferenceTask): Flow<String> {
         answeredByNano = nano.isUsable()
-        if (answeredByNano) return nano.answer(prompt, temperature = 0.5f, topK = 40, seed = seed)
+        if (answeredByNano) {
+            val run = stats.begin(task, "Gemini Nano · ${nano.baseModelName ?: "AICore"}", "AICore")
+            return nano
+                .answer(prompt, temperature = 0.5f, topK = 40, seed = seed, onRequest = { part -> if (part > 0) run.request() })
+                .timed(run)
+        }
         // Loaded already, unless Nano was writing until it failed
         val model = gemma()
         engineHolder.acquire(model, modelRepository.modelFile(model))
         val gpu = engineHolder.currentBackendIsGpu()
+        val run = stats.begin(task, model.displayName, if (gpu) "GPU" else "CPU · ${engineHolder.cpuThreads} thread")
         return engineHolder.streamAnswer(
             model = model,
             file = modelRepository.modelFile(model),
@@ -298,8 +336,14 @@ class LlmRecipeGenerator(
             // Besides hanging, the GPU can fail with an immediate exception (e.g. OpenCL
             // missing on the emulator): same treatment
             throw if (gpu && error !is CancellationException) GpuFailureException(error) else error
-        }
+        }.timed(run)
     }
+
+    /** What comes out of the model is counted and timed for the verbose display. */
+    private fun Flow<String>.timed(run: InferenceStats.Run): Flow<String> =
+        control.stoppable(this)
+            .onEach { run.output(it.length) }
+            .onCompletion { cause -> run.finish(failed = cause != null && cause !is CancellationException) }
 
     /** Garbage tokens (<pad>, <unused…>) in the answer: see [onFailedAttempt]. */
     private fun checkNotCorrupted(output: CharSequence) {

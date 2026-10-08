@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.smatrisciano.aipantry.core.data.ai.BackgroundAiWork
 import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
+import com.smatrisciano.aipantry.core.data.ai.GenerationControl
 import com.smatrisciano.aipantry.core.data.ai.LlmEngineHolder
 import com.smatrisciano.aipantry.core.data.ai.ModelRepository
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
@@ -61,7 +62,8 @@ class RecipeRepositoryImpl(
     engineHolder: LlmEngineHolder,
     nano: GeminiNanoWriter,
     backgroundAiWork: BackgroundAiWork,
-    appScope: CoroutineScope
+    appScope: CoroutineScope,
+    private val generationControl: GenerationControl
 ) : RecipeRepository {
 
     override val engineName: String get() = generator.engineName
@@ -133,6 +135,7 @@ class RecipeRepositoryImpl(
             lists.mapNotNull { it[key]?.toRecipeList() }.distinctUntilChanged()
 
         override fun regenerate() {
+            stoppedAhead.value = false
             lists.update { all ->
                 val current = all[key] ?: return@update all
                 // Written under the user's eyes: already seen
@@ -142,6 +145,7 @@ class RecipeRepositoryImpl(
         }
 
         override fun addMore() {
+            stoppedAhead.value = false
             lists.update { all ->
                 val current = all[key]?.takeIf { it.status == ListStatus.DONE } ?: return@update all
                 all + (key to current.grown())
@@ -150,6 +154,7 @@ class RecipeRepositoryImpl(
         }
 
         override fun showDetails(recipeId: Int) {
+            stoppedAhead.value = false
             updateEntry(key, recipeId) { it.copy(openedAt = SystemClock.elapsedRealtime()) }
             focus.value = Focus(this, recipeId)
         }
@@ -159,6 +164,7 @@ class RecipeRepositoryImpl(
         }
 
         override fun retryDetails(recipeId: Int) {
+            stoppedAhead.value = false
             updateEntry(key, recipeId) {
                 it.copy(recipe = it.listed, details = RecipeDetails(), detailsRound = it.detailsRound + 1)
             }
@@ -181,6 +187,9 @@ class RecipeRepositoryImpl(
     private val focus = MutableStateFlow<Focus?>(null)
     private val running = MutableStateFlow<Work?>(null)
 
+    // The user stopped the model: nothing is written ahead of time until they act again
+    private val stoppedAhead = MutableStateFlow(false)
+
     /** Key of the list for the current inventory, the one written ahead. */
     private val inventoryKey = MutableStateFlow<String?>(null)
     private val nextListId = AtomicLong()
@@ -200,8 +209,8 @@ class RecipeRepositoryImpl(
             nanoWrites || statuses[modelRepository.activeModel().id] == ModelStatus.Ready
         }.distinctUntilChanged()
         // Work ahead also waits for Gemma's startup warm-up, which may still be probing the GPU
-        val aheadAllowed = combine(backgroundAiWork.isAllowed, engineHolder.isWarm, nano.available) { allowed, warm, nanoWrites ->
-            allowed && (warm || nanoWrites)
+        val aheadAllowed = combine(backgroundAiWork.isAllowed, engineHolder.isWarm, nano.available, stoppedAhead) { allowed, warm, nanoWrites, stopped ->
+            allowed && (warm || nanoWrites) && !stopped
         }
         // Whether the phone has Gemini Nano 4, before the first recipe asks
         appScope.launch { nano.isUsable() }
@@ -261,12 +270,18 @@ class RecipeRepositoryImpl(
             }
         }.distinctUntilChanged()
 
+    override fun stopGeneration() {
+        stoppedAhead.value = true
+        generationControl.stop()
+    }
+
     // Whatever is being written stops too: with no list left, there is nothing to work on
     override fun clearCache() {
         lists.value = emptyMap()
     }
 
     override fun open(ingredients: List<Ingredient>): RecipeSession {
+        stoppedAhead.value = false
         val list = listFor(ingredients, replaceFailed = true)
         lists.update { all -> all + (list.key to all.getValue(list.key).copy(opened = true)) }
         val session = Session(list.key, writtenAhead = !list.opened && list.entries.isNotEmpty())

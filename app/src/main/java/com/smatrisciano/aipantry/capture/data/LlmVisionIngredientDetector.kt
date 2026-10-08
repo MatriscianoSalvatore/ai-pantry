@@ -154,8 +154,15 @@ object DetectionJsonParser {
     fun parse(rawOutput: String): List<DetectedIngredient> {
         val start = rawOutput.indexOf('[')
         val end = rawOutput.lastIndexOf(']')
-        require(start in 0 until end) { "No JSON array found in LLM output" }
-        return json.decodeFromString<List<DetectionDto>>(rawOutput.substring(start, end + 1))
+        // A list cut off at the token limit has no closing bracket: keep the items that are complete
+        val array = if (start in 0 until end) {
+            rawOutput.substring(start, end + 1)
+        } else {
+            val lastItem = rawOutput.lastIndexOf('}')
+            require(start >= 0 && lastItem > start) { "No JSON array found in LLM output" }
+            rawOutput.substring(start, lastItem + 1) + "]"
+        }
+        return json.decodeFromString<List<DetectionDto>>(array)
             .map {
                 DetectedIngredient(
                     name = it.name.replaceFirstChar(Char::uppercase),

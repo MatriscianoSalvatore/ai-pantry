@@ -182,9 +182,9 @@
     <string name="diag_gpu">GPU</string>
     <string name="diag_gpu_disabled">Not usable on this device</string>
     <string name="diag_gpu_available">Usable</string>
-    <string name="diag_xnnpack_cache">XNNPack cache</string>
-    <string name="diag_xnnpack_cache_value">%1$s · %2$d files</string>
-    <string name="diag_xnnpack_cache_none">Missing: rebuilt at the next load</string>
+    <string name="diag_caches">CPU and GPU caches</string>
+    <string name="diag_caches_value">%1$s · %2$d files</string>
+    <string name="diag_caches_none">Missing: rebuilt at the next load</string>
     <string name="diag_detector">Recognition</string>
     <string name="diag_work">Recipes right now</string>
     <string name="diag_work_idle">Idle</string>
@@ -229,4 +229,56 @@
     <string name="diag_device_cores">CPU cores</string>
     <string name="diag_app_version">App</string>
     <string name="diag_unavailable">Unavailable</string>
+
+    <!-- Hidden page: model choices, weights, verbose mode -->
+    <string name="diag_section_choices">Model for each task</string>
+    <string name="diag_choices_caption">A model that isn\'t there can\'t be picked: the next one takes over.</string>
+    <string name="diag_choice_scan">Recognise ingredients in a photo</string>
+    <string name="diag_choice_recipes">Write the recipes</string>
+    <string name="diag_choice_auto">Automatic</string>
+    <string name="diag_choice_nano">Gemini Nano</string>
+    <string name="diag_choice_gemma">Gemma 4</string>
+    <string name="diag_choice_clip">MobileCLIP</string>
+    <string name="diag_choice_gemma_version">Gemma version</string>
+    <string name="diag_weight_manual_hint">Not delivered by the app: copy the file in with adb to %1$s</string>
+    <string name="diag_choice_missing">%1$s · not here</string>
+    <string name="diag_verbose">Verbose mode</string>
+    <string name="diag_verbose_caption">Model in use, speed and heat over every screen</string>
+    <string name="diag_section_weights">Models on the device</string>
+    <string name="diag_weights_caption">What each one weighs and where it lives</string>
+    <string name="diag_weight_gemma_removed">Removed by hand</string>
+    <string name="diag_weight_gemma_cache">Caches of %1$s</string>
+    <string name="diag_weight_gemma_cache_caption">Written next to the model; go with it</string>
+    <string name="diag_weight_clip">MobileCLIP-S2</string>
+    <string name="diag_weight_clip_caption">In the APK: only uninstalling removes it</string>
+    <string name="diag_weight_nano">Gemini Nano</string>
+    <string name="diag_weight_nano_caption">Kept by AICore: the app can\'t delete it</string>
+    <string name="diag_weight_absent">Not here</string>
+    <string name="diag_weight_not_in_build">Not in this build</string>
+    <string name="diag_weight_size_unknown">Size not known</string>
+    <string name="diag_remove_gemma">Delete %1$s</string>
+    <string name="diag_restore_gemma">Restore %1$s</string>
+    <string name="diag_remove_gemma_title">Delete %1$s?</string>
+    <string name="diag_remove_gemma_body">Frees %1$s. It stays off, even after a restart, until you restore it: restoring copies it again from the Play packs or from the APK.</string>
+    <string name="diag_remove_gemma_confirm">Delete</string>
+
+    <!-- Verbose overlay -->
+    <string name="verbose_task_scan">Scan</string>
+    <string name="verbose_task_list">Recipe list</string>
+    <string name="verbose_task_details">Details</string>
+    <string name="verbose_run_head">%1$s · %2$s · %3$s</string>
+    <string name="verbose_run_working">writing… %1$.1f s · %2$d req</string>
+    <string name="verbose_run_stats">wait %1$.1f s · total %2$.1f s · %3$d req</string>
+    <string name="verbose_run_speed">%1$d chars · %2$.0f char/s (~%3$.0f tok/s)</string>
+    <string name="verbose_run_scan">%1$.1f s · %2$d found</string>
+    <string name="verbose_run_failed">failed</string>
+    <string name="verbose_idle">Nothing run yet</string>
+    <string name="verbose_heat">Battery %1$s · %2$s · headroom %3$s</string>
+    <string name="verbose_memory">RAM app %1$s · free %2$s</string>
+    <string name="diag_retry_gpu">Try the GPU again</string>
+    <string name="diag_choice_backend">Where %1$s runs</string>
+    <string name="diag_backend_gpu">GPU</string>
+    <string name="diag_backend_cpu">CPU</string>
+    <string name="diag_stop_generation">Stop the generation</string>
+    <string name="verbose_stop">■ Stop</string>
 </resources>

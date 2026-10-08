@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,12 +28,15 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,9 +57,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.smatrisciano.aipantry.R
-import com.smatrisciano.aipantry.core.data.ai.GeminiNanoWriter
+import com.smatrisciano.aipantry.core.data.ai.BackendChoice
+import com.smatrisciano.aipantry.core.data.ai.ModelChoice
 import com.smatrisciano.aipantry.core.data.ai.ModelStatus
-import com.smatrisciano.aipantry.core.data.ai.NanoState
 import com.smatrisciano.aipantry.core.presentation.theme.extendedColors
 import com.smatrisciano.aipantry.diagnostics.data.CpuCluster
 import com.smatrisciano.aipantry.diagnostics.data.DeviceInfo
@@ -99,6 +104,7 @@ private fun DiagnosticsScreen(
     onAction: (DiagnosticsActions) -> Unit
 ) {
     var confirmClear by remember { mutableStateOf(false) }
+    var confirmRemove by remember { mutableStateOf<GemmaWeights?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -120,7 +126,27 @@ private fun DiagnosticsScreen(
                 item(key = "memory") { MemorySection(device) }
             }
             state.model?.let { model ->
-                item(key = "model") { ModelSection(model, state.nano, state.work, state.aheadAllowed) }
+                item(key = "model") {
+                    ModelSection(
+                        model = model,
+                        work = state.work,
+                        aheadAllowed = state.aheadAllowed,
+                        onRetryGpuClick = { onAction(Interaction.OnRetryGpuClick) },
+                        onStopClick = { onAction(Interaction.OnStopClick) }
+                    )
+                }
+            }
+            state.selection?.let { selection ->
+                item(key = "choices") { ChoicesSection(selection, onAction) }
+            }
+            state.weights?.let { weights ->
+                item(key = "weights") {
+                    WeightsSection(
+                        weights = weights,
+                        onRemoveClick = { confirmRemove = it },
+                        onRestoreClick = { onAction(Interaction.OnRestoreModelClick(it)) }
+                    )
+                }
             }
             state.learned?.let { learned ->
                 item(key = "learned") { LearnedSection(learned) }
@@ -154,6 +180,31 @@ private fun DiagnosticsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmClear = false }) {
+                    Text(stringResource(R.string.diag_cancel))
+                }
+            }
+        )
+    }
+    confirmRemove?.let { model ->
+        AlertDialog(
+            onDismissRequest = { confirmRemove = null },
+            title = { Text(stringResource(R.string.diag_remove_gemma_title, model.name)) },
+            text = { Text(stringResource(R.string.diag_remove_gemma_body, bytes((model.bytes ?: 0L) + model.cacheBytes))) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRemove = null
+                        onAction(Interaction.OnRemoveModelClick(model.id))
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.diag_remove_gemma_confirm),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemove = null }) {
                     Text(stringResource(R.string.diag_cancel))
                 }
             }
@@ -315,22 +366,20 @@ private fun MemorySection(device: DeviceSnapshot) {
 }
 
 @Composable
-private fun ModelSection(model: ModelInfo, nano: NanoState?, work: RecipeWork, aheadAllowed: Boolean) {
+private fun ModelSection(
+    model: ModelInfo,
+    work: RecipeWork,
+    aheadAllowed: Boolean,
+    onRetryGpuClick: () -> Unit,
+    onStopClick: () -> Unit
+) {
     val scheme = MaterialTheme.colorScheme
     val colors = MaterialTheme.extendedColors
     Section(title = stringResource(R.string.diag_section_model)) {
-        NanoRow(nano)
         InfoRow(
-            label = stringResource(R.string.diag_gemma),
+            label = stringResource(R.string.diag_model),
             value = "${model.name} · ${modelStatusLabel(model.status)}",
-            caption = stringResource(
-                if ((nano as? NanoState.Ready)?.writesRecipes == true) R.string.diag_gemma_backup else R.string.diag_gemma_writes
-            ),
-            valueColor = when (model.status) {
-                ModelStatus.Ready -> colors.success
-                is ModelStatus.Failed, ModelStatus.NotInstalled -> scheme.error
-                else -> scheme.onSurface
-            }
+            first = true
         )
         InfoRow(
             label = stringResource(R.string.diag_model_file),
@@ -350,11 +399,11 @@ private fun ModelSection(model: ModelInfo, nano: NanoState?, work: RecipeWork, a
             valueColor = if (model.gpuDisabled) scheme.onSurfaceVariant else colors.success
         )
         InfoRow(
-            label = stringResource(R.string.diag_xnnpack_cache),
+            label = stringResource(R.string.diag_caches),
             value = if (model.cacheFileCount > 0) {
-                stringResource(R.string.diag_xnnpack_cache_value, bytes(model.cacheBytes), model.cacheFileCount)
+                stringResource(R.string.diag_caches_value, bytes(model.cacheBytes), model.cacheFileCount)
             } else {
-                stringResource(R.string.diag_xnnpack_cache_none)
+                stringResource(R.string.diag_caches_none)
             },
             valueColor = if (model.cacheFileCount > 0) scheme.onSurface else colors.warning
         )
@@ -376,42 +425,268 @@ private fun ModelSection(model: ModelInfo, nano: NanoState?, work: RecipeWork, a
             value = stringResource(if (aheadAllowed) R.string.diag_ahead_allowed else R.string.diag_ahead_paused)
         )
     }
+    // What the model is writing can be stopped from here, from any screen it is running on
+    if (work != RecipeWork.Idle) {
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = onStopClick,
+            shape = CircleShape,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Text(text = stringResource(R.string.diag_stop_generation), style = MaterialTheme.typography.titleSmall)
+        }
+    }
+    // Given up on, rightly or wrongly (a race can blame it): one tap and the next load tries it again
+    if (model.gpuDisabled) {
+        Spacer(modifier = Modifier.height(12.dp))
+        FilledTonalButton(
+            onClick = onRetryGpuClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Text(text = stringResource(R.string.diag_retry_gpu), style = MaterialTheme.typography.titleSmall)
+        }
+    }
 }
 
-/** Whether the phone has Gemini Nano, which one, and what it does in the app. */
+/** The model each task is given to, and the verbose display. A model that isn't there can't be picked. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun NanoRow(nano: NanoState?) {
-    val scheme = MaterialTheme.colorScheme
-    InfoRow(
-        label = stringResource(R.string.diag_nano),
-        value = when (nano) {
-            null -> stringResource(R.string.diag_nano_checking)
-            NanoState.Unreachable -> stringResource(R.string.diag_nano_unreachable)
-            NanoState.Unsupported -> stringResource(R.string.diag_nano_unsupported)
-            NanoState.Downloadable -> stringResource(R.string.diag_nano_downloadable)
-            NanoState.Downloading -> stringResource(R.string.diag_nano_downloading)
-            is NanoState.Ready -> {
-                val name = if (nano.generation > 0) "Gemini Nano ${nano.generation}" else nano.baseModel
-                "$name · ${stringResource(R.string.diag_model_ready)}"
+private fun ChoicesSection(selection: ModelSelection, onAction: (DiagnosticsActions) -> Unit) {
+    Section(
+        title = stringResource(R.string.diag_section_choices),
+        caption = stringResource(R.string.diag_choices_caption)
+    ) {
+        ChoiceRow(
+            label = stringResource(R.string.diag_choice_scan),
+            selected = selection.scan,
+            options = listOf(ModelChoice.AUTO, ModelChoice.NANO, ModelChoice.GEMMA, ModelChoice.CLIP),
+            selection = selection,
+            first = true,
+            onSelect = { onAction(Interaction.OnScanChoice(it)) }
+        )
+        ChoiceRow(
+            label = stringResource(R.string.diag_choice_recipes),
+            selected = selection.recipes,
+            options = listOf(ModelChoice.AUTO, ModelChoice.NANO, ModelChoice.GEMMA),
+            selection = selection,
+            onSelect = { onAction(Interaction.OnRecipeChoice(it)) }
+        )
+        if (selection.gemmaVersions.size > 1) {
+            ChipRow(
+                label = stringResource(R.string.diag_choice_gemma_version),
+                options = selection.gemmaVersions.map { ChipOption(it.id, it.name, it.ready) },
+                selectedId = selection.activeGemmaId,
+                onSelect = { onAction(Interaction.OnGemmaVersion(it)) }
+            )
+        }
+        ChipRow(
+            label = stringResource(R.string.diag_choice_backend, selection.activeGemmaName),
+            options = listOf(
+                ChipOption(BackendChoice.AUTO.name, stringResource(R.string.diag_choice_auto), true),
+                ChipOption(BackendChoice.GPU.name, stringResource(R.string.diag_backend_gpu), true),
+                ChipOption(BackendChoice.CPU.name, stringResource(R.string.diag_backend_cpu), true)
+            ),
+            selectedId = selection.backend.name,
+            onSelect = { onAction(Interaction.OnBackendChoice(BackendChoice.valueOf(it))) }
+        )
+        HorizontalDivider(
+            modifier = Modifier.padding(start = RowPadding),
+            color = MaterialTheme.colorScheme.outlineVariant
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = RowPadding, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = stringResource(R.string.diag_verbose), style = MaterialTheme.typography.bodyLarge)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.diag_verbose_caption),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        },
-        caption = (nano as? NanoState.Ready)?.let {
-            stringResource(
-                when {
-                    it.writesRecipes -> R.string.diag_nano_writes
-                    it.generation >= GeminiNanoWriter.MIN_GENERATION -> R.string.diag_nano_failed
-                    else -> R.string.diag_nano_ingredients
-                },
-                it.baseModel
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = selection.verbose,
+                onCheckedChange = { onAction(Interaction.OnVerboseChange(it)) }
+            )
+        }
+    }
+}
+
+private class ChipOption(val id: String, val name: String, val present: Boolean)
+
+@Composable
+private fun ChoiceRow(
+    label: String,
+    selected: ModelChoice,
+    options: List<ModelChoice>,
+    selection: ModelSelection,
+    onSelect: (ModelChoice) -> Unit,
+    first: Boolean = false
+) {
+    ChipRow(
+        label = label,
+        options = options.map { option ->
+            ChipOption(
+                id = option.name,
+                name = choiceName(option),
+                present = when (option) {
+                    ModelChoice.AUTO -> true
+                    ModelChoice.NANO -> selection.nanoPresent
+                    ModelChoice.GEMMA -> selection.gemmaReady
+                    ModelChoice.CLIP -> selection.clipPresent
+                }
             )
         },
-        valueColor = when (nano) {
-            is NanoState.Ready -> MaterialTheme.extendedColors.success
-            NanoState.Downloadable, NanoState.Downloading -> scheme.onSurface
-            else -> scheme.onSurfaceVariant
-        },
-        first = true
+        selectedId = selected.name,
+        first = first,
+        onSelect = { id -> onSelect(ModelChoice.valueOf(id)) }
     )
+}
+
+/** A label and the options under it as chips; one that isn't there is greyed, unless it is the one picked. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChipRow(
+    label: String,
+    options: List<ChipOption>,
+    selectedId: String,
+    onSelect: (String) -> Unit,
+    first: Boolean = false
+) {
+    if (!first) {
+        HorizontalDivider(
+            modifier = Modifier.padding(start = RowPadding),
+            color = MaterialTheme.colorScheme.outlineVariant
+        )
+    }
+    Column(modifier = Modifier.padding(horizontal = RowPadding, vertical = 14.dp)) {
+        Text(text = label, style = MaterialTheme.typography.bodyLarge)
+        Spacer(modifier = Modifier.height(8.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            options.forEach { option ->
+                FilterChip(
+                    selected = option.id == selectedId,
+                    // A choice that isn't there can still be let go of
+                    enabled = option.present || option.id == selectedId,
+                    onClick = { onSelect(option.id) },
+                    label = {
+                        Text(if (option.present) option.name else stringResource(R.string.diag_choice_missing, option.name))
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun choiceName(choice: ModelChoice): String = stringResource(
+    when (choice) {
+        ModelChoice.AUTO -> R.string.diag_choice_auto
+        ModelChoice.NANO -> R.string.diag_choice_nano
+        ModelChoice.GEMMA -> R.string.diag_choice_gemma
+        ModelChoice.CLIP -> R.string.diag_choice_clip
+    }
+)
+
+/** What each model weighs and where it lives, with Gemma, the one the app owns, removable. */
+@Composable
+private fun WeightsSection(
+    weights: ModelWeights,
+    onRemoveClick: (GemmaWeights) -> Unit,
+    onRestoreClick: (String) -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    Section(
+        title = stringResource(R.string.diag_section_weights),
+        caption = stringResource(R.string.diag_weights_caption)
+    ) {
+        weights.gemma.forEachIndexed { index, model ->
+            InfoRow(
+                label = model.name,
+                value = model.bytes?.let { bytes(it) } ?: stringResource(R.string.diag_weight_absent),
+                caption = when {
+                    model.removedByUser -> stringResource(R.string.diag_weight_gemma_removed)
+                    model.bytes == null && model.manual -> stringResource(R.string.diag_weight_manual_hint, model.installPath)
+                    else -> modelStatusLabel(model.status)
+                },
+                first = index == 0
+            )
+            if (model.cacheBytes > 0) {
+                InfoRow(
+                    label = stringResource(R.string.diag_weight_gemma_cache, model.name),
+                    value = bytes(model.cacheBytes),
+                    caption = stringResource(R.string.diag_weight_gemma_cache_caption)
+                )
+            }
+        }
+        InfoRow(
+            label = stringResource(R.string.diag_weight_clip),
+            value = weights.clipBytes?.let { bytes(it) } ?: stringResource(R.string.diag_weight_not_in_build),
+            caption = stringResource(R.string.diag_weight_clip_caption)
+        )
+        InfoRow(
+            label = stringResource(R.string.diag_weight_nano),
+            value = weights.nanoBytes?.let { bytes(it) }
+                ?: stringResource(if (weights.nanoPresent) R.string.diag_weight_size_unknown else R.string.diag_weight_absent),
+            caption = listOfNotNull(
+                weights.nanoBaseModel,
+                stringResource(R.string.diag_weight_nano_caption)
+            ).joinToString(" · ")
+        )
+    }
+    weights.gemma.forEach { model ->
+        // Taken off, and one the app can provision again: restore. Otherwise, there: delete
+        if (model.removedByUser && !model.manual) {
+            Spacer(modifier = Modifier.height(12.dp))
+            FilledTonalButton(
+                onClick = { onRestoreClick(model.id) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.diag_restore_gemma, model.name),
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+        } else if (model.bytes != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = { onRemoveClick(model) },
+                shape = CircleShape,
+                border = BorderStroke(1.dp, scheme.error),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = scheme.error),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DeleteSweep,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.diag_remove_gemma, model.name),
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+        }
+    }
 }
 
 @Composable

@@ -1,6 +1,7 @@
 package com.smatrisciano.aipantry.core.data.ai
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.edit
 import com.google.ai.edge.litertlm.Backend
@@ -21,15 +22,19 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * LiteRT-LM engine cache: loading the model costs seconds and GBs of RAM, so
@@ -40,18 +45,30 @@ import java.util.concurrent.atomic.AtomicBoolean
  * happens the backend is marked broken **persistently** for that model: later
  * launches go straight to CPU, without wasting time hanging on the dead GPU.
  */
-class LlmEngineHolder(private val context: Context) {
+class LlmEngineHolder(private val context: Context, private val choices: ModelPreferences) {
 
     private val prefs = context.getSharedPreferences("llm_engine", Context.MODE_PRIVATE)
 
     private var engine: Engine? = null
     private var enginePath: String? = null
     private var engineIsGpu: Boolean = false
+    private var engineModelId: String? = null
+
+    // Models whose GPU failed this session, where the GPU was picked by hand (not written off)
+    private val sessionGpuFailed = mutableSetOf<String>()
+
+    // Answers being written right now: the engine isn't taken out of memory under them
+    private val inFlight = AtomicInteger(0)
 
     @Synchronized
     fun acquire(model: LlmModel, file: File): Engine {
         val path = file.absolutePath
-        val wantGpu = !isGpuBroken(model)
+        val backend = choices.backendFor(model.id)
+        val wantGpu = when (backend) {
+            BackendChoice.CPU -> false
+            BackendChoice.GPU -> model.id !in sessionGpuFailed
+            BackendChoice.AUTO -> !isGpuBroken(model)
+        }
         if (enginePath != path || engineIsGpu != wantGpu) {
             engine?.close()
             engine = null
@@ -61,17 +78,78 @@ class LlmEngineHolder(private val context: Context) {
                     // GPU init failed right away (not a hang): unlike the watchdog, without
                     // persisting it here every future acquire() would retry and fail on the
                     // same GPU again, wasting a few seconds each time
-                    if (wantGpu) persistGpuBroken(model)
+                    // By hand, a GPU that fails is only given up on until the next launch
+                    if (wantGpu) {
+                        if (backend == BackendChoice.AUTO) persistGpuBroken(model) else sessionGpuFailed.add(model.id)
+                    }
                     createEngine(path, model, gpu = false)?.also { engineIsGpu = false }
                 }
                 ?: error("Cannot initialize LLM engine for ${model.displayName}")
             enginePath = path
-            Log.i(TAG, "LLM engine ready, gpu=$engineIsGpu")
+            engineModelId = model.id
+            Log.i(TAG, "LLM engine ready for ${model.id}, gpu=$engineIsGpu")
         }
         return requireNotNull(engine)
     }
 
     fun currentBackendIsGpu(): Boolean = engineIsGpu
+
+    /** Takes the model out of memory (its file is about to go): the next [acquire] loads it again. */
+    @Synchronized
+    fun unload() {
+        engine?.close()
+        engine = null
+        enginePath = null
+        engineIsGpu = false
+        engineModelId = null
+    }
+
+    /**
+     * Takes the model out of memory to leave it to something else (a scan with another model),
+     * unless an answer is being written with it. The next [acquire] loads it again. True when
+     * nothing of it is in memory any more.
+     */
+    @Synchronized
+    fun unloadIfIdle(): Boolean {
+        if (engine == null) return true
+        if (inFlight.get() > 0) return false
+        Log.i(TAG, "Taking ${engineModelId ?: "the model"} out of memory: something else needs it")
+        unload()
+        return true
+    }
+
+    /**
+     * Like [unloadIfIdle], but waits up to [timeoutMillis] for an answer being written to let go
+     * of the engine: when the camera opens, the recipes written ahead are cancelled, and the
+     * engine only frees itself a moment later.
+     */
+    suspend fun unloadWhenIdle(timeoutMillis: Long = 5_000): Boolean {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+        while (!unloadIfIdle()) {
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                Log.w(TAG, "Not taking the model out of memory: an answer is still being written with it")
+                return false
+            }
+            delay(100)
+        }
+        return true
+    }
+
+    /**
+     * Forgets that the GPU was given up on for [model], and takes it out of memory if it is the
+     * one loaded: the next load tries the GPU again. For the times it was blamed wrongly.
+     */
+    /** The GPU picked by hand is tried again: it failed earlier in this session. */
+    @Synchronized
+    fun clearSessionFailure(model: LlmModel) {
+        sessionGpuFailed.remove(model.id)
+    }
+
+    @Synchronized
+    fun resetGpuBroken(model: LlmModel) {
+        prefs.edit { remove(gpuBrokenKey(model)) }
+        if (engineModelId == model.id) unload()
+    }
 
     /** The model is in memory, ready to answer. */
     fun isLoaded(): Boolean = engine != null
@@ -116,6 +194,19 @@ class LlmEngineHolder(private val context: Context) {
         topP: Double,
         seed: Int,
         stallTimeoutMillis: Long? = null
+    ): Flow<String> = answerFlow(model, file, prompt, temperature, topK, topP, seed, stallTimeoutMillis)
+        .onStart { inFlight.incrementAndGet() }
+        .onCompletion { inFlight.decrementAndGet() }
+
+    private fun answerFlow(
+        model: LlmModel,
+        file: File,
+        prompt: String,
+        temperature: Double,
+        topK: Int,
+        topP: Double,
+        seed: Int,
+        stallTimeoutMillis: Long?
     ): Flow<String> = flow {
         val conversation = createConversation(model, file, temperature, topK, topP, seed)
         val pieces = Channel<String>(Channel.UNLIMITED)
@@ -227,6 +318,11 @@ class LlmEngineHolder(private val context: Context) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "GPU probe threw", e)
+            // Another model took the engine's place while the probe ran: nothing is known of the GPU
+            if (e is IllegalStateException && e.message?.contains("not initialized") == true) {
+                Log.w(TAG, "GPU probe inconclusive: the engine was replaced meanwhile, not marking the GPU")
+                return
+            }
             false
         }
         if (!ok) {
@@ -258,16 +354,22 @@ class LlmEngineHolder(private val context: Context) {
      */
     @Synchronized
     fun reportGpuUnusable(model: LlmModel): Boolean {
+        if (engineModelId != null && engineModelId != model.id) {
+            Log.w(TAG, "The engine loaded isn't ${model.id}'s: its GPU isn't blamed")
+            return true
+        }
         if (!engineIsGpu) {
             Log.e(TAG, "Output unusable on CPU backend too — giving up")
             return false
         }
         Log.w(TAG, "GPU unusable for ${model.id}: switching to CPU (persisted)")
         persistGpuBroken(model)
+        sessionGpuFailed.add(model.id)
         engine?.close()
         engine = null
         enginePath = null
         engineIsGpu = false
+        engineModelId = null
         return true
     }
 
@@ -285,7 +387,10 @@ class LlmEngineHolder(private val context: Context) {
         val config = EngineConfig(
             modelPath = path,
             backend = backend,
-            visionBackend = if (model.supportsVision) backend else null
+            visionBackend = if (model.supportsVision) backend else null,
+            // Without it the caches go next to the model, and where that folder can't be
+            // written the GPU doesn't start at all: it has to write its weights first
+            cacheDir = modelsDir(context).absolutePath
         )
         Engine(config).apply { initialize() }
     }.onFailure {

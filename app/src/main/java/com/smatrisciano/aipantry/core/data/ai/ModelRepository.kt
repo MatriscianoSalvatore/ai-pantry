@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.io.File
 
 sealed interface ModelStatus {
@@ -40,7 +41,8 @@ class ModelRepository(
     private val aiPackManager: AiPackManager,
     private val appScope: CoroutineScope,
     private val engineHolder: LlmEngineHolder,
-    private val nano: GeminiNanoWriter
+    private val nano: GeminiNanoWriter,
+    private val choices: ModelPreferences
 ) {
 
     private val _statuses = MutableStateFlow<Map<String, ModelStatus>>(emptyMap())
@@ -64,15 +66,93 @@ class ModelRepository(
         return File(modelsDir(), model.fileName)
     }
 
-    fun activeModel(): LlmModel = LlmCatalog.default
+    /**
+     * The Gemma version chosen on the hidden page, if it is ready; otherwise the first one that
+     * is, so a version that was removed doesn't leave Gemma out when another is there.
+     */
+    fun activeModel(): LlmModel {
+        fun ready(model: LlmModel) = _statuses.value[model.id] == ModelStatus.Ready
+        return LlmCatalog.byId(choices.activeModelId.value).takeIf(::ready)
+            ?: LlmCatalog.all.firstOrNull(::ready)
+            ?: LlmCatalog.byId(choices.activeModelId.value)
+    }
+
+    /**
+     * The models copied in by hand may arrive (or go) while the app runs: looks again at the
+     * folder. Cheap enough to call every few seconds.
+     */
+    fun rescanManual() {
+        // Not warmed up here: it would swap the engine under an answer being written; it loads when asked
+        val before = settling
+        settling = true
+        try {
+            LlmCatalog.all.filter { it.source == ModelSource.Manual }.forEach { model ->
+                val there = isProvisioned(model)
+                val ready = _statuses.value[model.id] == ModelStatus.Ready
+                if (there && !ready) setStatus(model, ModelStatus.Ready)
+                if (!there && ready) setStatus(model, ModelStatus.NotInstalled)
+            }
+        } finally {
+            settling = before
+        }
+    }
+
+    /**
+     * Loads the version in use again, for the backend picked by hand to take effect: it is taken out of
+     * memory once nothing is being written with it, and warmed up with the new backend.
+     */
+    suspend fun reloadActive() {
+        val model = activeModel()
+        engineHolder.clearSessionFailure(model)
+        engineHolder.unloadWhenIdle()
+        warmedUp.remove(model.id)
+        if (_statuses.value[model.id] == ModelStatus.Ready) warmUpEngine(model)
+    }
+
+    /** Gemma runs the version [id] from now on: it is loaded when it is next asked. */
+    fun selectActive(id: String) {
+        choices.setActiveModelId(id)
+        syncGemmaReady()
+        val model = activeModel()
+        if (_statuses.value[model.id] == ModelStatus.Ready) warmUpEngine(model)
+    }
+
+    /** Where [model] goes when it is copied in with adb: the folder the app can write caches in. */
+    fun installPath(model: LlmModel): String = File(modelsDir(), model.fileName).absolutePath
+
+    private fun syncGemmaReady() {
+        choices.gemmaReady = _statuses.value[activeModel().id] == ModelStatus.Ready
+    }
 
     /** The active model, only if ready to use. */
     fun readyActiveModel(): LlmModel? =
         activeModel().takeIf { _statuses.value[it.id] == ModelStatus.Ready }
 
+    // While the models' states are being worked out, nothing is warmed up: which one is in use
+    // isn't known until they all are, and two warm-ups at once have each close the other's engine
+    @Volatile
+    private var settling = false
+
     private suspend fun refresh() {
+        settling = true
+        try {
+            refreshAll()
+        } finally {
+            settling = false
+        }
+        readyActive()?.let { warmUpEngine(it) }
+    }
+
+    private fun readyActive(): LlmModel? = activeModel().takeIf { _statuses.value[it.id] == ModelStatus.Ready }
+
+    private suspend fun refreshAll() {
         cleanupOrphanedFiles()
         LlmCatalog.all.forEach { model ->
+            // Taken off by hand: it stays off until it is restored
+            if (choices.isRemoved(model.id) && !isProvisioned(model)) {
+                setStatus(model, ModelStatus.NotInstalled)
+                return@forEach
+            }
             if (isProvisioned(model)) {
                 setStatus(model, ModelStatus.Ready)
                 return@forEach
@@ -81,6 +161,8 @@ class ModelRepository(
                 // Zero-touch: the embedded model prepares itself on first launch
                 is ModelSource.BundledAssets -> provisionBundled(model, source)
                 is ModelSource.AiPacks -> refreshAiPacks(model, source)
+                // Copied in by hand: it is there or it isn't
+                ModelSource.Manual -> setStatus(model, ModelStatus.NotInstalled)
             }
         }
     }
@@ -232,49 +314,70 @@ class ModelRepository(
 
     /** Removes models from previous app versions (e.g. after a catalog change), with their files. */
     private fun cleanupOrphanedFiles() {
-        val known = LlmCatalog.all.map { it.fileName }
         modelsDir().listFiles()?.forEach { file ->
-            if (!isNeeded(file.name, known)) {
+            if (!isNeeded(file.name)) {
                 Log.i(TAG, "Deleting orphaned model file ${file.name} (${file.length()} bytes)")
                 file.delete()
             }
         }
     }
 
-    /** The XNNPack caches LiteRT-LM keeps next to [model]'s file (see [isNeeded]). */
-    fun cacheFiles(model: LlmModel): List<File> {
-        val file = modelFile(model)
-        return file.parentFile
-            ?.listFiles { other -> isCache(other.name, file.name) }
-            ?.toList()
-            .orEmpty()
-    }
+    /** The caches LiteRT-LM keeps for [model] in the models folder (see [isNeeded]). */
+    fun cacheFiles(model: LlmModel): List<File> =
+        modelsDir().listFiles { other -> isCache(other.name, model.fileName) }?.toList().orEmpty()
 
     /**
      * A file of the models folder still in use: a model of the catalog, the copy in
-     * progress of one that isn't there yet or, next to one that is, the XNNPack caches
-     * LiteRT-LM writes (the weights already laid out for the CPU, which every launch
-     * would otherwise build again).
+     * progress of one that isn't there yet or, for one that is (here or pushed with adb),
+     * the caches LiteRT-LM writes: the weights already laid out for the CPU (XNNPack) and
+     * for the GPU (ML Drift), which every launch would otherwise build again.
      */
-    private fun isNeeded(name: String, known: List<String>): Boolean = known.any { model ->
-        val present = File(modelsDir(), model).exists()
+    private fun isNeeded(name: String): Boolean = LlmCatalog.all.any { model ->
         when (name) {
-            model -> true
-            "$model.assembling", "$model.copying" -> !present
-            else -> present && isCache(name, model)
+            model.fileName -> true
+            "${model.fileName}.assembling", "${model.fileName}.copying" -> !File(modelsDir(), model.fileName).exists()
+            else -> isCache(name, model.fileName) && modelFile(model).exists()
         }
     }
 
     /**
-     * A cache the LiteRT-LM in use writes next to [model]: "<model>_<hash>_<size>.xnnpack_cache".
-     * A cache named another way ("<model>.xnnpack_cache_…") is another runtime's: this
-     * one doesn't read it, and it goes (almost 1 GB).
+     * A cache the LiteRT-LM in use writes for [model], carrying the model's hash and size:
+     * "<model>_<hash>_<size>.xnnpack_cache", "<model>_<hash>_<size>_mldrift_weight_cache.bin",
+     * "<model>.vision_encoder_<hash>_<size>_mldrift_program_cache.bin"… One named
+     * "<model>.xnnpack_cache_<hash>_<size>" is another runtime's: this one doesn't read
+     * it, and it goes (almost 1 GB).
      */
-    private fun isCache(name: String, model: String): Boolean = name.startsWith("${model}_")
+    private fun isCache(name: String, model: String): Boolean =
+        name.startsWith(model) && name != model && XNNPACK_CACHE_OF_ANOTHER_RUNTIME !in name
+
+    /**
+     * Takes [model] off the device: out of memory, its file and the caches written next to it.
+     * It isn't provisioned again (from the Play packs or the APK) until [restore]. False if a
+     * file couldn't be removed (a copy pushed with adb into a folder the app can't write to).
+     */
+    suspend fun remove(model: LlmModel): Boolean = withContext(Dispatchers.IO) {
+        provisionMutex.withLock {
+            engineHolder.unload()
+            warmedUp.remove(model.id)
+            val removed = (listOf(modelFile(model)) + cacheFiles(model)).all { !it.exists() || it.delete() }
+            if (removed) choices.setRemoved(model.id, true)
+            setStatus(model, if (isProvisioned(model)) ModelStatus.Ready else ModelStatus.NotInstalled)
+            removed
+        }
+    }
+
+    /** Provisions [model] again, after [remove]. */
+    suspend fun restore(model: LlmModel) = withContext(Dispatchers.IO) {
+        choices.setRemoved(model.id, false)
+        refresh()
+    }
 
     private fun setStatus(model: LlmModel, status: ModelStatus) {
         _statuses.update { it + (model.id to status) }
-        if (status == ModelStatus.Ready) warmUpEngine(model)
+        syncGemmaReady()
+        // Only the version in use: the engine holds one model, and warming up two at once has
+        // each close the other's engine under it
+        if (!settling && status == ModelStatus.Ready && model.id == activeModel().id) warmUpEngine(model)
     }
 
     /**
@@ -299,12 +402,19 @@ class ModelRepository(
         }
     }
 
-    private fun modelsDir(): File =
-        (context.getExternalFilesDir("models") ?: File(context.filesDir, "models"))
-            .apply { mkdirs() }
+    private fun modelsDir(): File = modelsDir(context)
 
     private companion object {
         const val TAG = "ModelRepository"
         const val BUFFER_SIZE = 1024 * 1024
+        const val XNNPACK_CACHE_OF_ANOTHER_RUNTIME = ".xnnpack_cache_"
     }
 }
+
+/**
+ * The app's own folder for the models and for the caches LiteRT-LM writes for them, wherever
+ * the model is read from: a model pushed with adb sits in a folder the app can't write to.
+ */
+internal fun modelsDir(context: Context): File =
+    (context.getExternalFilesDir("models") ?: File(context.filesDir, "models"))
+        .apply { mkdirs() }

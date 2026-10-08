@@ -58,6 +58,7 @@ class CaptureViewModel(
     }
 
     override fun onCleared() {
+        detector.release()
         resumeBackgroundWork()
     }
 

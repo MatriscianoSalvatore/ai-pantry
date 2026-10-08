@@ -9,8 +9,16 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Which model a task is given to. [AUTO] is the default order (Gemini Nano where the phone
  * has it, then the others); a choice whose model isn't there falls back to that order.
+ * [CLIP] and [EMBEDDING_GEMMA] only look at photos: they never write the recipes, and
+ * [AUTO] never picks EmbeddingGemma, which is there for trying out by hand.
  */
-enum class ModelChoice { AUTO, NANO, GEMMA, CLIP }
+enum class ModelChoice(val writesRecipes: Boolean = true) {
+    AUTO,
+    NANO,
+    GEMMA,
+    CLIP(writesRecipes = false),
+    EMBEDDING_GEMMA(writesRecipes = false)
+}
 
 /**
  * Where a Gemma version runs. [AUTO] tries the GPU and falls back to the CPU for good if it
@@ -33,9 +41,9 @@ class ModelPreferences(context: Context) {
     /** The model that recognises the ingredients in a photo. */
     val scan: StateFlow<ModelChoice> = _scan.asStateFlow()
 
-    private val _recipes = MutableStateFlow(read(KEY_RECIPES).takeUnless { it == ModelChoice.CLIP } ?: ModelChoice.AUTO)
+    private val _recipes = MutableStateFlow(read(KEY_RECIPES).takeIf { it.writesRecipes } ?: ModelChoice.AUTO)
 
-    /** The model that writes the recipes (CLIP only looks at photos). */
+    /** The model that writes the recipes (never one that only looks at photos). */
     val recipes: StateFlow<ModelChoice> = _recipes.asStateFlow()
 
     private val _verbose = MutableStateFlow(prefs.getBoolean(KEY_VERBOSE, false))
@@ -105,7 +113,7 @@ class ModelPreferences(context: Context) {
     }
 
     fun setRecipes(choice: ModelChoice) {
-        val allowed = choice.takeUnless { it == ModelChoice.CLIP } ?: ModelChoice.AUTO
+        val allowed = choice.takeIf { it.writesRecipes } ?: ModelChoice.AUTO
         prefs.edit { putString(KEY_RECIPES, allowed.name) }
         _recipes.value = allowed
     }

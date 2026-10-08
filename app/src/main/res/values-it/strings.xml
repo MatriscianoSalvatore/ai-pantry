@@ -157,18 +157,7 @@
     <string name="diag_ram_low">Memoria quasi esaurita</string>
     <string name="diag_app_memory">Usata dall\'app</string>
     <string name="diag_section_model">Modelli on device</string>
-    <string name="diag_nano">Gemini Nano</string>
-    <string name="diag_nano_checking">Chiedo ad AICore…</string>
-    <string name="diag_nano_downloadable">Non ancora scaricato</string>
-    <string name="diag_nano_downloading">In download</string>
-    <string name="diag_nano_unsupported">Non offerto su questo dispositivo</string>
-    <string name="diag_nano_unreachable">AICore non disponibile</string>
-    <string name="diag_nano_writes">%1$s · riconosce gli ingredienti e scrive le ricette</string>
-    <string name="diag_nano_ingredients">%1$s · riconosce gli ingredienti, le ricette le scrive Gemma</string>
-    <string name="diag_nano_failed">%1$s · errore in questa sessione: le ricette le scrive Gemma fino al prossimo avvio</string>
-    <string name="diag_gemma">Gemma</string>
-    <string name="diag_gemma_writes">Scrive le ricette</string>
-    <string name="diag_gemma_backup">Di riserva: scrive le ricette se Gemini Nano non riesce</string>
+    <string name="diag_model">Modello</string>
     <string name="diag_model_ready">pronto</string>
     <string name="diag_model_preparing">in preparazione</string>
     <string name="diag_model_downloading">in download</string>
@@ -238,6 +227,7 @@
     <string name="diag_choice_nano">Gemini Nano</string>
     <string name="diag_choice_gemma">Gemma 4</string>
     <string name="diag_choice_clip">MobileCLIP</string>
+    <string name="diag_choice_embedding">EmbeddingGemma 2</string>
     <string name="diag_choice_gemma_version">Versione di Gemma</string>
     <string name="diag_weight_manual_hint">Non la porta l\'app: copia il file con adb in %1$s</string>
     <string name="diag_choice_missing">%1$s · assente</string>
@@ -250,6 +240,8 @@
     <string name="diag_weight_gemma_cache_caption">Scritte accanto al modello; se ne vanno con lui</string>
     <string name="diag_weight_clip">MobileCLIP-S2</string>
     <string name="diag_weight_clip_caption">Nell\'APK: lo toglie solo la disinstallazione</string>
+    <string name="diag_weight_embedding">EmbeddingGemma 2</string>
+    <string name="diag_weight_embedding_caption">Copiato con adb: riconosce gli ingredienti solo se scelto qui sopra</string>
     <string name="diag_weight_nano">Gemini Nano</string>
     <string name="diag_weight_nano_caption">Lo tiene AICore: l\'app non può cancellarlo</string>
     <string name="diag_weight_absent">Assente</string>

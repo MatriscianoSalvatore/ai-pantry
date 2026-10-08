@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smatrisciano.aipantry.BuildConfig
 import com.smatrisciano.aipantry.capture.data.ClipZeroShotIngredientDetector
+import com.smatrisciano.aipantry.capture.data.EmbeddingGemmaIngredientDetector
 import com.smatrisciano.aipantry.capture.domain.IngredientDetector
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator
 import com.smatrisciano.aipantry.core.data.WaitTimeEstimator.Measure
@@ -41,6 +42,7 @@ class DiagnosticsViewModel(
     private val choices: ModelPreferences,
     private val nano: GeminiNanoWriter,
     private val clip: ClipZeroShotIngredientDetector,
+    private val embedding: EmbeddingGemmaIngredientDetector,
     backgroundAiWork: BackgroundAiWork
 ) : ViewModel() {
 
@@ -168,6 +170,8 @@ class DiagnosticsViewModel(
                 )
             },
             clipBytes = clip.modelSizeBytes(),
+            embeddingBytes = embedding.modelSizeBytes(),
+            embeddingInstallPath = embedding.installPath(),
             nanoBytes = choices.nanoDownloadBytes.takeIf { it > 0 },
             nanoPresent = nano.present.value,
             nanoBaseModel = nano.baseModelName
@@ -181,6 +185,7 @@ class DiagnosticsViewModel(
         nanoPresent = nano.present.value,
         gemmaReady = modelRepository.readyActiveModel() != null,
         clipPresent = clip.modelSizeBytes() != null,
+        embeddingPresent = embedding.isPresent(),
         gemmaVersions = LlmCatalog.all.map { model ->
             GemmaVersion(model.id, model.displayName, modelRepository.statuses.value[model.id] == ModelStatus.Ready)
         },

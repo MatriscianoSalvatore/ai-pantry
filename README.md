@@ -51,11 +51,12 @@ CameraX / Photo picker → Image capture
 play flavor:  Google Play ──(AI pack ×3, fast-follow)──▶ ModelRepository ──assemble──▶ .litertlm
 beta flavor:  APK assets ──(chunk ×3 inside the APK)───▶ ModelRepository ──assemble──▶ .litertlm
 MobileCLIP:   APK assets (~140 MB, gitignored — fetched by scripts/prepare_clip_assets.py)
+EmbeddingGemma 2: copied in with adb, for the hidden page only (388 MB)
 ```
 
 Every feature follows Clean Architecture + MVI (`data / domain / presentation`), DI with Koin:
 
-- `capture/` — CameraX + photo picker; `AdaptiveIngredientDetector` (runtime selection), `NanoIngredientDetector` (ML Kit GenAI Prompt API), `ClipZeroShotIngredientDetector` (LiteRT), `LlmVisionIngredientDetector` (detection via Gemma vision: present in the code as a third route, off the default path — minutes per scan when it ends up on CPU)
+- `capture/` — CameraX + photo picker; `AdaptiveIngredientDetector` (runtime selection), `NanoIngredientDetector` (ML Kit GenAI Prompt API), `ClipZeroShotIngredientDetector` (LiteRT) and `EmbeddingGemmaIngredientDetector` (LiteRT-LM, picked on the hidden page only) on the shared `ZeroShotScan` (crops, scores, results), `LlmVisionIngredientDetector` (detection via Gemma vision: present in the code as a third route, off the default path — minutes per scan when it ends up on CPU)
 - `inventory/` — Room, ingredient inventory, model status banner on home, keyword emoji resolver
 - `recipes/` — `RecipeRepositoryImpl` (lists per ingredient set, one generation at a time with what is on screen first, work ahead in the background, resume after an interruption), `LlmRecipeGenerator` (two-stage streaming generation + retries, on Gemini Nano 4 or Gemma), `RecipeTitleRules` (Italian titles tidied, odd combinations dropped), `SameDish` (repeated dishes), tolerant `RecipeJsonParser`
 - `diagnostics/` — the hidden page: heat and throttling, battery, memory, model, recipe cache
@@ -75,6 +76,8 @@ Every feature follows Clean Architecture + MVI (`data / domain / presentation`),
 - `scripts/prepare_clip_assets.py` — downloads the encoder from Hugging Face if missing (it is gitignored), computes the embeddings with open_clip (4 averaged templates) and writes `assets/clip/label_embeddings.json` (~4.5 MB); with `--verify-image` it checks open_clip ↔ TFLite parity (≥0.99 expected)
 
 Adding an ingredient = adding a line (and its Italian name) and re-running the script. Confidence threshold 22%, max 15 results per scan. CLIP classifies but does not count, so no quantity is shown in the app: the field survives in the data model (Nano does fill it in) but a placeholder count is worse than none. The vocabulary is closed: CLIP only recognises what is listed in the file.
+
+**EmbeddingGemma 2 zero-shot** (only when picked on the hidden page, to try it out) — the same scan as MobileCLIP (`ZeroShotScan`: same crops, labels, templates and 22% threshold), with crops and labels embedded by EmbeddingGemma 2 (text + vision, 440M, Apache 2.0) on LiteRT-LM, Gemma's runtime. The app never picks it by itself and doesn't deliver the model: copy `embeddinggemma-2-text-vision-440m.litertlm` (388 MB, from [litert-community](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm)) to the path the hidden page shows, `adb push embeddinggemma-2-text-vision-440m.litertlm /sdcard/Android/data/com.smatrisciano.aipantry/files/embedding/`. The label embeddings are in the repo, written by `scripts/prepare_embeddinggemma_assets.py` (it downloads the model into `build/embeddinggemma/` if missing; `--check-image fridge.png` prints what the app's scan finds). On a Pixel 7 a photo takes ~65–75 s on the GPU (43 crops at 70 vision tokens), against ~21 s for MobileCLIP, with ~1.4 GB of memory while it scans, given back when the camera closes.
 
 ## The LLM: Gemma 4 E2B on LiteRT-LM, two delivery channels
 

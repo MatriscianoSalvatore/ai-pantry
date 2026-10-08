@@ -158,18 +158,7 @@
     <string name="diag_ram_low">Memory running low</string>
     <string name="diag_app_memory">Used by the app</string>
     <string name="diag_section_model">On-device models</string>
-    <string name="diag_nano">Gemini Nano</string>
-    <string name="diag_nano_checking">Asking AICore…</string>
-    <string name="diag_nano_downloadable">Not downloaded yet</string>
-    <string name="diag_nano_downloading">Downloading</string>
-    <string name="diag_nano_unsupported">Not offered on this device</string>
-    <string name="diag_nano_unreachable">AICore unavailable</string>
-    <string name="diag_nano_writes">%1$s · recognizes the ingredients and writes the recipes</string>
-    <string name="diag_nano_ingredients">%1$s · recognizes the ingredients; Gemma writes the recipes</string>
-    <string name="diag_nano_failed">%1$s · failed in this session: Gemma writes the recipes until the next launch</string>
-    <string name="diag_gemma">Gemma</string>
-    <string name="diag_gemma_writes">Writes the recipes</string>
-    <string name="diag_gemma_backup">Backup: writes the recipes if Gemini Nano fails</string>
+    <string name="diag_model">Model</string>
     <string name="diag_model_ready">ready</string>
     <string name="diag_model_preparing">preparing</string>
     <string name="diag_model_downloading">downloading</string>
@@ -239,6 +228,7 @@
     <string name="diag_choice_nano">Gemini Nano</string>
     <string name="diag_choice_gemma">Gemma 4</string>
     <string name="diag_choice_clip">MobileCLIP</string>
+    <string name="diag_choice_embedding">EmbeddingGemma 2</string>
     <string name="diag_choice_gemma_version">Gemma version</string>
     <string name="diag_weight_manual_hint">Not delivered by the app: copy the file in with adb to %1$s</string>
     <string name="diag_choice_missing">%1$s · not here</string>
@@ -251,6 +241,8 @@
     <string name="diag_weight_gemma_cache_caption">Written next to the model; go with it</string>
     <string name="diag_weight_clip">MobileCLIP-S2</string>
     <string name="diag_weight_clip_caption">In the APK: only uninstalling removes it</string>
+    <string name="diag_weight_embedding">EmbeddingGemma 2</string>
+    <string name="diag_weight_embedding_caption">Copied in with adb: recognises the ingredients only when picked above</string>
     <string name="diag_weight_nano">Gemini Nano</string>
     <string name="diag_weight_nano_caption">Kept by AICore: the app can\'t delete it</string>
     <string name="diag_weight_absent">Not here</string>

@@ -40,6 +40,9 @@ data class GemmaWeights(
 data class ModelWeights(
     val gemma: List<GemmaWeights>,
     val clipBytes: Long?,
+    val embeddingBytes: Long?,
+    /** Where EmbeddingGemma 2 goes: it is copied in with adb. */
+    val embeddingInstallPath: String,
     val nanoBytes: Long?,
     val nanoPresent: Boolean,
     val nanoBaseModel: String?
@@ -56,6 +59,7 @@ data class ModelSelection(
     val nanoPresent: Boolean,
     val gemmaReady: Boolean,
     val clipPresent: Boolean,
+    val embeddingPresent: Boolean,
     val gemmaVersions: List<GemmaVersion>,
     val activeGemmaId: String,
     val activeGemmaName: String,

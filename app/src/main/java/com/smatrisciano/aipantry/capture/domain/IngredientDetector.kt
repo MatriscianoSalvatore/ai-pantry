@@ -42,6 +42,9 @@ interface IngredientDetector {
     /** Gets the model ready ahead of the first photo; detectors with nothing to prepare do nothing. */
     suspend fun warmUp() {}
 
+    /** The camera is closed: a detector holding a model only for photos gives its memory back. */
+    fun release() {}
+
     /**
      * Detects the ingredients in [bitmap]. [onProgress] follows the scan as it goes,
      * for the detectors that can tell; the others never call it.

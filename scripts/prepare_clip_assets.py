@@ -21,8 +21,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import torch
-import open_clip
 
 ROOT = Path(__file__).resolve().parent.parent
 LABELS_FILE = ROOT / "scripts" / "ingredient_labels.txt"
@@ -88,6 +86,11 @@ def load_italian_names(displays: list[str], distractors: list[bool]) -> list[str
 
 
 def main() -> None:
+    # Here and not at the top: prepare_embeddinggemma_assets.py reads the labels from this
+    # script without torch and open_clip
+    import torch
+    import open_clip
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--verify-image", type=Path, default=None)
     args = parser.parse_args()
@@ -143,6 +146,7 @@ def ensure_tflite_model() -> None:
 
 def verify(model, preprocess, image_path: Path) -> None:
     """open_clip ↔ TFLite parity on the image encoder."""
+    import torch
     from PIL import Image
     from ai_edge_litert.interpreter import Interpreter
 

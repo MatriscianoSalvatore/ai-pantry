@@ -10,5 +10,5 @@ import org.koin.dsl.module
 val diagnosticsModule = module {
     single { DeviceMonitor(androidContext()) }
     viewModel { VerboseViewModel(get(), get(), get(), get()) }
-    viewModel { DiagnosticsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { DiagnosticsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }

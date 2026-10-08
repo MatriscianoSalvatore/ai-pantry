@@ -51,11 +51,12 @@ CameraX / Photo picker → Image capture
 flavor play:  Google Play ──(AI pack ×3, fast-follow)──▶ ModelRepository ──assemble──▶ .litertlm
 flavor beta:  asset dell'APK ──(chunk ×3 nell'APK)─────▶ ModelRepository ──assemble──▶ .litertlm
 MobileCLIP:   asset dell'APK (~140 MB, in gitignore — lo scarica scripts/prepare_clip_assets.py)
+EmbeddingGemma 2: copiato con adb, solo per la pagina nascosta (388 MB)
 ```
 
 Ogni feature segue Clean Architecture + MVI (`data / domain / presentation`), DI con Koin:
 
-- `capture/` — CameraX + photo picker; `AdaptiveIngredientDetector` (scelta a runtime), `NanoIngredientDetector` (ML Kit GenAI Prompt API), `ClipZeroShotIngredientDetector` (LiteRT), `LlmVisionIngredientDetector` (riconoscimento con la visione di Gemma: presente nel codice come terza via, fuori dal percorso di default — minuti per scansione quando finisce su CPU)
+- `capture/` — CameraX + photo picker; `AdaptiveIngredientDetector` (scelta a runtime), `NanoIngredientDetector` (ML Kit GenAI Prompt API), `ClipZeroShotIngredientDetector` (LiteRT) ed `EmbeddingGemmaIngredientDetector` (LiteRT-LM, solo se scelto nella pagina nascosta) sul comune `ZeroShotScan` (ritagli, punteggi, risultati), `LlmVisionIngredientDetector` (riconoscimento con la visione di Gemma: presente nel codice come terza via, fuori dal percorso di default — minuti per scansione quando finisce su CPU)
 - `inventory/` — Room, inventario degli ingredienti, banner di stato del modello nella home, risoluzione delle emoji per parola chiave
 - `recipes/` — `RecipeRepositoryImpl` (liste per insieme di ingredienti, una generazione alla volta con prima quello che è a schermo, lavoro in anticipo in background, ripresa dopo un'interruzione), `LlmRecipeGenerator` (generazione in due fasi in streaming + tentativi ripetuti, con Gemini Nano 4 o Gemma), `RecipeTitleRules` (titoli italiani sistemati, abbinamenti strani scartati), `SameDish` (piatti ripetuti), `RecipeJsonParser` tollerante
 - `diagnostics/` — la pagina nascosta: calore e throttling, batteria, memoria, modello, cache delle ricette
@@ -75,6 +76,8 @@ Ogni feature segue Clean Architecture + MVI (`data / domain / presentation`), DI
 - `scripts/prepare_clip_assets.py` — scarica l'encoder da Hugging Face se manca (è in gitignore), calcola gli embedding con open_clip (4 template mediati) e scrive `assets/clip/label_embeddings.json` (~4,5 MB); con `--verify-image` verifica la parità open_clip ↔ TFLite (atteso ≥0,99)
 
 Aggiungere un ingrediente = aggiungere una riga (e il suo nome italiano) e rilanciare lo script. Soglia di confidenza 22%, massimo 15 risultati per scansione. CLIP classifica ma non conta, quindi l'app non mostra quantità: il campo resta nel modello dati (Nano lo compila). Il vocabolario è chiuso: CLIP riconosce solo quello che è elencato nel file.
+
+**EmbeddingGemma 2 zero-shot** (solo se scelto nella pagina nascosta, per provarlo) — la stessa scansione di MobileCLIP (`ZeroShotScan`: stessi ritagli, etichette, template e soglia del 22%), con ritagli ed etichette trasformati in embedding da EmbeddingGemma 2 (testo + visione, 440M, Apache 2.0) su LiteRT-LM, il runtime di Gemma. L'app non lo sceglie mai da sola e non porta il modello: copia `embeddinggemma-2-text-vision-440m.litertlm` (388 MB, da [litert-community](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm)) nel percorso che mostra la pagina nascosta, `adb push embeddinggemma-2-text-vision-440m.litertlm /sdcard/Android/data/com.smatrisciano.aipantry/files/embedding/`. Gli embedding delle etichette sono nel repo, scritti da `scripts/prepare_embeddinggemma_assets.py` (scarica il modello in `build/embeddinggemma/` se manca; `--check-image fridge.png` stampa cosa trova la scansione dell'app). Su un Pixel 7 una foto richiede ~65–75 s sulla GPU (43 ritagli a 70 token visivi), contro i ~21 s di MobileCLIP, con ~1,4 GB di memoria durante la scansione, restituiti quando si chiude la fotocamera.
 
 ## L'LLM: Gemma 4 E2B su LiteRT-LM, due canali di distribuzione
 

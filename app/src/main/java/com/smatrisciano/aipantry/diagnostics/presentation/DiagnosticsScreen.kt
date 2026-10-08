@@ -465,7 +465,7 @@ private fun ChoicesSection(selection: ModelSelection, onAction: (DiagnosticsActi
         ChoiceRow(
             label = stringResource(R.string.diag_choice_scan),
             selected = selection.scan,
-            options = listOf(ModelChoice.AUTO, ModelChoice.NANO, ModelChoice.GEMMA, ModelChoice.CLIP),
+            options = listOf(ModelChoice.AUTO, ModelChoice.NANO, ModelChoice.GEMMA, ModelChoice.CLIP, ModelChoice.EMBEDDING_GEMMA),
             selection = selection,
             first = true,
             onSelect = { onAction(Interaction.OnScanChoice(it)) }
@@ -545,6 +545,7 @@ private fun ChoiceRow(
                     ModelChoice.NANO -> selection.nanoPresent
                     ModelChoice.GEMMA -> selection.gemmaReady
                     ModelChoice.CLIP -> selection.clipPresent
+                    ModelChoice.EMBEDDING_GEMMA -> selection.embeddingPresent
                 }
             )
         },
@@ -599,6 +600,7 @@ private fun choiceName(choice: ModelChoice): String = stringResource(
         ModelChoice.NANO -> R.string.diag_choice_nano
         ModelChoice.GEMMA -> R.string.diag_choice_gemma
         ModelChoice.CLIP -> R.string.diag_choice_clip
+        ModelChoice.EMBEDDING_GEMMA -> R.string.diag_choice_embedding
     }
 )
 
@@ -637,6 +639,15 @@ private fun WeightsSection(
             label = stringResource(R.string.diag_weight_clip),
             value = weights.clipBytes?.let { bytes(it) } ?: stringResource(R.string.diag_weight_not_in_build),
             caption = stringResource(R.string.diag_weight_clip_caption)
+        )
+        InfoRow(
+            label = stringResource(R.string.diag_weight_embedding),
+            value = weights.embeddingBytes?.let { bytes(it) } ?: stringResource(R.string.diag_weight_absent),
+            caption = if (weights.embeddingBytes == null) {
+                stringResource(R.string.diag_weight_manual_hint, weights.embeddingInstallPath)
+            } else {
+                stringResource(R.string.diag_weight_embedding_caption)
+            }
         )
         InfoRow(
             label = stringResource(R.string.diag_weight_nano),

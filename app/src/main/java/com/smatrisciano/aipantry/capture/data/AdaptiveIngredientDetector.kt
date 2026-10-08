@@ -17,15 +17,16 @@ import kotlinx.coroutines.CancellationException
 /**
  * Picks the detector on every scan, from the model the user chose for it (see
  * [ModelPreferences]). By default Gemini Nano (AICore) where the device supports it,
- * otherwise CLIP zero-shot. Gemma vision (slow on CPU) is only used when chosen. A chosen model
- * that isn't there, or that fails at runtime, hands the scan to the next one: Nano, then CLIP,
- * whichever are left. The choice is per scan and not persisted: the Nano model can become
- * available after a background download.
+ * otherwise CLIP zero-shot. Gemma vision (slow on CPU) and EmbeddingGemma 2 are only used
+ * when chosen. A chosen model that isn't there, or that fails at runtime, hands the scan to
+ * the next one: Nano, then CLIP, whichever are left. The choice is per scan and not
+ * persisted: the Nano model can become available after a background download.
  */
 class AdaptiveIngredientDetector(
     private val nano: NanoIngredientDetector,
     private val gemma: IngredientDetector,
     private val clip: IngredientDetector,
+    private val embedding: EmbeddingGemmaIngredientDetector,
     private val modelRepository: ModelRepository,
     private val engineHolder: LlmEngineHolder,
     private val choices: ModelPreferences,
@@ -44,6 +45,7 @@ class AdaptiveIngredientDetector(
         val gemmaReady = modelRepository.readyActiveModel()?.supportsVision == true
         if (choice == ModelChoice.CLIP) add(clip)
         if (choice == ModelChoice.GEMMA && gemmaReady) add(gemma)
+        if (choice == ModelChoice.EMBEDDING_GEMMA && embedding.isPresent()) add(embedding)
         if (nano.isUsable()) add(nano)
         if (clip !in this) add(clip)
     }
@@ -58,10 +60,15 @@ class AdaptiveIngredientDetector(
     /**
      * A scan with another model than Gemma doesn't leave Gemma in memory: a big one (E4B with
      * its caches is some 6 GB) next to the scan has Android close the app. It loads again when
-     * the recipes need it.
+     * the recipes need it. EmbeddingGemma, there only for its own scans, goes too.
      */
     private suspend fun makeRoomFor(detector: IngredientDetector) {
         if (detector !== gemma) engineHolder.unloadWhenIdle()
+        if (detector !== embedding) embedding.release()
+    }
+
+    override fun release() {
+        embedding.release()
     }
 
     override suspend fun detect(
@@ -93,6 +100,7 @@ class AdaptiveIngredientDetector(
     private fun backendOf(detector: IngredientDetector): String = when (detector) {
         nano -> "AICore"
         gemma -> if (engineHolder.currentBackendIsGpu()) "GPU" else "CPU"
+        embedding -> embedding.backendName
         else -> "CPU · LiteRT"
     }
 

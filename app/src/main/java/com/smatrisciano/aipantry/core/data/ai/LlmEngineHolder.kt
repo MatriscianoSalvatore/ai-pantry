@@ -18,18 +18,21 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -121,18 +124,22 @@ class LlmEngineHolder(private val context: Context, private val choices: ModelPr
     /**
      * Like [unloadIfIdle], but waits up to [timeoutMillis] for an answer being written to let go
      * of the engine: when the camera opens, the recipes written ahead are cancelled, and the
-     * engine only frees itself a moment later.
+     * engine only frees itself a moment later. The GPU probe isn't waited for: it is stopped.
+     * Never on the main thread: closing the engine on the GPU takes up to a second, and a load
+     * still under way is waited for first, the camera freezing all the while.
      */
-    suspend fun unloadWhenIdle(timeoutMillis: Long = 5_000): Boolean {
+    suspend fun unloadWhenIdle(timeoutMillis: Long = 5_000): Boolean = withContext(Dispatchers.IO) {
         val deadline = SystemClock.elapsedRealtime() + timeoutMillis
-        while (!unloadIfIdle()) {
+        while (true) {
+            probeJob?.cancel()
+            if (unloadIfIdle()) break
             if (SystemClock.elapsedRealtime() >= deadline) {
                 Log.w(TAG, "Not taking the model out of memory: an answer is still being written with it")
-                return false
+                return@withContext false
             }
             delay(100)
         }
-        return true
+        true
     }
 
     /**
@@ -194,21 +201,19 @@ class LlmEngineHolder(private val context: Context, private val choices: ModelPr
         topP: Double,
         seed: Int,
         stallTimeoutMillis: Long? = null
-    ): Flow<String> = answerFlow(model, file, prompt, temperature, topK, topP, seed, stallTimeoutMillis)
-        .onStart { inFlight.incrementAndGet() }
-        .onCompletion { inFlight.decrementAndGet() }
+    ): Flow<String> = countedAnswer(prompt, stallTimeoutMillis) {
+        createConversation(model, file, temperature, topK, topP, seed)
+    }
 
-    private fun answerFlow(
-        model: LlmModel,
-        file: File,
-        prompt: String,
-        temperature: Double,
-        topK: Int,
-        topP: Double,
-        seed: Int,
-        stallTimeoutMillis: Long?
-    ): Flow<String> = flow {
-        val conversation = createConversation(model, file, temperature, topK, topP, seed)
+    /** [answerFlow], counted among the answers being written: the engine isn't taken out of memory under it. */
+    private fun countedAnswer(prompt: String, stallTimeoutMillis: Long?, open: () -> Conversation): Flow<String> =
+        answerFlow(prompt, stallTimeoutMillis, open)
+            .onStart { inFlight.incrementAndGet() }
+            .onCompletion { inFlight.decrementAndGet() }
+
+    /** The answer to [prompt] in the conversation [open] starts. */
+    private fun answerFlow(prompt: String, stallTimeoutMillis: Long?, open: () -> Conversation): Flow<String> = flow {
+        val conversation = open()
         val pieces = Channel<String>(Channel.UNLIMITED)
         val finished = CompletableDeferred<Unit>()
         val stopRequested = AtomicBoolean(false)
@@ -299,43 +304,60 @@ class LlmEngineHolder(private val context: Context, private val choices: ModelPr
     val isWarm: StateFlow<Boolean> = _isWarm.asStateFlow()
 
     private suspend fun loadAndProbe(model: LlmModel, file: File) {
-        acquire(model, file)
+        val loaded = acquire(model, file)
         if (!currentBackendIsGpu()) return
 
+        // Representative prompt (generates a few sentences with the real parameters): a
+        // trivial micro-generation would pass even on a broken GPU. It is an answer being
+        // written like the others, and runs on the engine just loaded only: one taken out of
+        // memory meanwhile isn't loaded again for it
         val probe = probeScope.async {
-            // Representative prompt (generates a few sentences with the real parameters):
-            // a trivial micro-generation would pass even on a broken GPU
-            createConversation(model, file, temperature = 0.5, topK = 40, topP = 0.9).use { conversation ->
-                conversation.sendMessage(Contents.of(Content.Text("List five common fruits, one per line.")))
-            }
+            countedAnswer("List five common fruits, one per line.", stallTimeoutMillis = null) {
+                loaded.createConversation(
+                    ConversationConfig(samplerConfig = SamplerConfig(topK = 40, topP = 0.9, temperature = 0.5, seed = 0))
+                )
+            }.collect {}
         }
+        probeJob = probe
         // A broken GPU can show up in two ways: a hang (timeout) or an immediate
         // exception on the first inference (e.g. OpenCL missing on the emulator,
         // where engine init succeeds instead)
         val ok = try {
             withTimeoutOrNull(GPU_PROBE_TIMEOUT_MS) { probe.await() } != null
         } catch (e: CancellationException) {
-            throw e
+            // Stopped by [unloadWhenIdle], the camera wanting the memory: nothing is known of the GPU
+            if (!probe.isCancelled || !currentCoroutineContext().isActive) throw e
+            Log.i(TAG, "GPU probe stopped: the model is going out of memory, not marking the GPU")
+            return
         } catch (e: Exception) {
             Log.w(TAG, "GPU probe threw", e)
-            // Another model took the engine's place while the probe ran: nothing is known of the GPU
-            if (e is IllegalStateException && e.message?.contains("not initialized") == true) {
-                Log.w(TAG, "GPU probe inconclusive: the engine was replaced meanwhile, not marking the GPU")
-                return
-            }
             false
+        } finally {
+            probeJob = null
         }
-        if (!ok) {
-            probe.cancel()
-            Log.w(TAG, "GPU probe failed or timed out — marking GPU unusable and reloading on CPU")
-            reportGpuUnusable(model)
-            acquire(model, file)
-        } else {
+        if (ok) {
             Log.i(TAG, "GPU probe OK — using GPU")
+            return
         }
+        // Taken out of memory or replaced by another model while the probe ran: nothing is known of the GPU
+        if (!isCurrent(loaded)) {
+            Log.w(TAG, "GPU probe inconclusive: the engine went meanwhile, not marking the GPU")
+            return
+        }
+        probe.cancel()
+        Log.w(TAG, "GPU probe failed or timed out — marking GPU unusable and reloading on CPU")
+        reportGpuUnusable(model)
+        acquire(model, file)
     }
 
     private val probeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** The GPU probe running, if any: [unloadWhenIdle] stops it rather than wait for it. */
+    @Volatile
+    private var probeJob: Job? = null
+
+    @Synchronized
+    private fun isCurrent(engine: Engine): Boolean = this.engine === engine
 
     // Backend.CPU() runs on a single thread by default: on a 2.6 GB multimodal
     // model that leaves almost every core idle. Using ALL the cores, though, heats

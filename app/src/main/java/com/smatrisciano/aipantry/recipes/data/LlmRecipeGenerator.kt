@@ -330,7 +330,7 @@ class LlmRecipeGenerator(
             temperature = 0.5,
             topK = if (gpu) 25 else 40,
             topP = 0.9,
-            seed = seed,
+            seed = if (gpu) seed - FIRST_SEED + FIRST_GPU_SEED else seed,
             stallTimeoutMillis = if (gpu) GPU_STALL_TIMEOUT_MS else null
         ).catch { error ->
             // Besides hanging, the GPU can fail with an immediate exception (e.g. OpenCL
@@ -414,11 +414,15 @@ class LlmRecipeGenerator(
     }
 
     // Any start is as good as another, but not 0 (for the runtime, seed 0 and seed 1 give
-    // the same output). From 10 the demo kitchen, the fridge and pantry of the demo photos,
-    // first gets pasta al pomodoro, risotto ai funghi, insalata mista con tonno e capperi
-    // and melanzane alla parmigiana: with LiteRT-LM 0.17.1 and the list prompt as it is,
-    // as another runtime or prompt draws other dishes from a seed
-    private fun seedFor(round: Int, attempt: Int): Int = 10 + round * MAX_ATTEMPTS + attempt
+    // the same output). From FIRST_SEED the demo kitchen, the fridge and pantry of the demo
+    // photos, first gets pasta al pomodoro, risotto ai funghi, insalata mista con tonno e
+    // capperi and melanzane alla parmigiana: with LiteRT-LM 0.17.1 on the CPU and the list
+    // prompt as it is, as another runtime or prompt draws other dishes from a seed. Gemma on
+    // the GPU (other sampling, other arithmetic) draws others from the same seed: there it
+    // starts from FIRST_GPU_SEED, whose first list for the demo kitchen is pasta al pomodoro e
+    // mozzarella, risotto ai funghi, insalata mista con tonno e capperi and melanzane al forno
+    // con ricotta e mozzarella (Pixel 7)
+    private fun seedFor(round: Int, attempt: Int): Int = FIRST_SEED + round * MAX_ATTEMPTS + attempt
 
     // JSON keys and difficulty values stay in English in both languages: they
     // are the contract with the parser, only the contents are translated
@@ -507,6 +511,9 @@ class LlmRecipeGenerator(
     private companion object {
         const val TAG = "LlmRecipeGenerator"
         const val MAX_ATTEMPTS = 4
+
+        const val FIRST_SEED = 10
+        const val FIRST_GPU_SEED = 28
 
         // A new list with fewer dishes than this after dropping the odd ones gets another
         // attempt, which adds to it
